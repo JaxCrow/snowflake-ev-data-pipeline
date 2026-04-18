@@ -28,27 +28,36 @@ AS
 $$
 def main(session):
     from snowflake.snowpark.functions import col, current_timestamp
-    from snowflake.snowpark.types import StringType, IntegerType, FloatType
+    
+    # 1. Lectura de la tabla Bronze
+    df_raw = session.table("EV_PROJECT_DB.BRONZE.RAW_EV_DATA")
+    
+    # 2. Transformación: Extracción de datos del JSON + Metadata de Snowflake
+    df_clean = df_raw.select(
+        # Datos de Negocio
+        col("JSON_DATA")["VIN"].as_("VIN"),
+        col("JSON_DATA")["County"].as_("COUNTY"),
+        col("JSON_DATA")["City"].as_("CITY"),
+        col("JSON_DATA")["Postal Code"].as_("POSTAL_CODE"),
+        col("JSON_DATA")["Model Year"].as_("MODEL_YEAR").cast("int"),
+        col("JSON_DATA")["Make"].as_("MAKE"),
+        col("JSON_DATA")["Model"].as_("MODEL"),
+        col("JSON_DATA")["Electric Vehicle Type"].as_("EV_TYPE"),
+        col("JSON_DATA")["Clean Alternative Fuel Vehicle (CAFV) Eligibility"].as_("CAFV_ELIGIBILITY"),
+        col("JSON_DATA")["Electric Range"].as_("ELECTRIC_RANGE").cast("float"),
+        col("JSON_DATA")["Base MSRP"].as_("BASE_MSRP").cast("float"),
+        col("JSON_DATA")["Legislative District"].as_("LEGISLATIVE_DISTRICT"),
+        col("JSON_DATA")["Electric Utility"].as_("ELECTRIC_UTILITY"),
+        
+        # Metadata para Auditoría y Linaje
+        # Nota: Asegúrate de que tu tabla Bronze tenga estas columnas de metadata cargadas
+        col("SOURCE_FILE").as_("SOURCE_FILE"), 
+        col("SOURCE_FILE_ROW").as_("SOURCE_FILE_ROW"),
+        current_timestamp().as_("LOAD_TIMESTAMP")
+    ).filter(col("VIN").is_not_null())
 
-    try:
-        df_raw = session.table("EV_PROJECT_DB.BRONZE.RAW_EV_DATA")
-
-        df_clean = df_raw.select(
-            col("RAW_DOCUMENT")["VIN"].cast(StringType()).alias("VIN"),
-            col("RAW_DOCUMENT")["Make"].cast(StringType()).alias("MAKE"),
-            col("RAW_DOCUMENT")["Model"].cast(StringType()).alias("MODEL"),
-            col("RAW_DOCUMENT")["Model Year"].cast(IntegerType()).alias("MODEL_YEAR"),
-            col("RAW_DOCUMENT")["Electric Range"].cast(IntegerType()).alias("ELECTRIC_RANGE"),
-            col("RAW_DOCUMENT")["Base MSRP"].cast(FloatType()).alias("BASE_MSRP"),
-            current_timestamp().alias("LOAD_TIMESTAMP")
-        ).filter(col("VIN").is_not_null())
-
-        row_count = df_clean.count()
-
-        df_clean.write.mode("append").save_as_table("EV_PROJECT_DB.SILVER.CLEAN_EV_DATA")
-
-        return f"SUCCESS: {row_count} rows transformed and loaded into SILVER.CLEAN_EV_DATA."
-
-    except Exception as e:
-        return f"FAILURE: {str(e)}"
+    # 3. Persistencia (Append para mantener historial de ingestas)
+    df_clean.write.mode("append").save_as_table("EV_PROJECT_DB.SILVER.CLEAN_EV_DATA")
+    
+    return f"SUCCESS: {df_clean.count()} rows processed with metadata."
 $$;

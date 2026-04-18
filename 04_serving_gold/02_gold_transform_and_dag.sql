@@ -57,33 +57,39 @@ def main(session):
     from snowflake.snowpark.functions import col, count, avg, max as max_, current_timestamp
     from datetime import datetime, timezone
 
+    # Captura de tiempo inicial para auditoría
     start_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     try:
+        # 1. Lectura de la capa Silver (que ya incluye metadatos de archivo)
         df_silver = session.table("EV_PROJECT_DB.SILVER.CLEAN_EV_DATA")
 
+        # 2. Agregaciones estratégicas (KPIs solicitados en el proyecto)
         df_gold = (
             df_silver
-            .group_by(col("MAKE"))
+            .group_by(col("MAKE"), col("EV_TYPE"))
             .agg(
                 count(col("VIN")).alias("TOTAL_VEHICLES"),
-                avg(col("ELECTRIC_RANGE")).alias("AVG_ELECTRIC_RANGE"),
+                avg(col("ELECTRIC_RANGE")).alias("AVG_RANGE"),
                 max_(col("BASE_MSRP")).alias("MAX_MSRP")
             )
             .with_column("LOAD_TIMESTAMP", current_timestamp())
         )
 
+        # 3. Conteo de filas para el log de auditoría
         row_count = df_gold.count()
 
+        # 4. Refresco de la tabla Iceberg (Idempotencia)
         session.sql("TRUNCATE TABLE EV_PROJECT_DB.GOLD.FACT_EV_MARKET_METRICS").collect()
         df_gold.write.mode("append").save_as_table("EV_PROJECT_DB.GOLD.FACT_EV_MARKET_METRICS")
 
         end_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
+        # 5. Registro de éxito en la tabla de Observabilidad
         session.call(
             "EV_PROJECT_DB.GOLD.SP_LOG_METADATA",
-            "silver_to_gold",
-            "GOLD",
+            "silver_to_gold_aggregation", # Nombre del proceso
+            "GOLD",                       # Capa destino
             start_time,
             end_time,
             row_count,
@@ -91,14 +97,15 @@ def main(session):
             ""
         )
 
-        return f"SUCCESS: {row_count} rows aggregated into GOLD.FACT_EV_MARKET_METRICS."
+        return f"SUCCESS: {row_count} aggregated rows pushed to Iceberg table."
 
     except Exception as e:
         end_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
+        
+        # Registro de falla en la tabla de Observabilidad
         session.call(
             "EV_PROJECT_DB.GOLD.SP_LOG_METADATA",
-            "silver_to_gold",
+            "silver_to_gold_aggregation",
             "GOLD",
             start_time,
             end_time,
@@ -106,7 +113,6 @@ def main(session):
             "FAILURE",
             str(e)
         )
-
         return f"FAILURE: {str(e)}"
 $$;
 
