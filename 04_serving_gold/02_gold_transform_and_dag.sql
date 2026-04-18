@@ -43,6 +43,7 @@ def main(session, file_name, layer, start_time, end_time, rows_proc, status, err
 $$;
 
 -- 2. Silver → Gold transformation procedure
+
 CREATE OR REPLACE PROCEDURE EV_PROJECT_DB.GOLD.SP_TRANSFORM_SILVER_TO_GOLD()
 RETURNS STRING
 LANGUAGE PYTHON
@@ -74,7 +75,8 @@ def main(session):
 
         row_count = df_gold.count()
 
-        df_gold.write.mode("overwrite").save_as_table("EV_PROJECT_DB.GOLD.FACT_EV_MARKET_METRICS")
+        session.sql("TRUNCATE TABLE EV_PROJECT_DB.GOLD.FACT_EV_MARKET_METRICS").collect()
+        df_gold.write.mode("append").save_as_table("EV_PROJECT_DB.GOLD.FACT_EV_MARKET_METRICS")
 
         end_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
