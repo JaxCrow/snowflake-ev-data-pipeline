@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EV Pipeline — Data Flow Diagram</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.8rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+    }
+    .diagram-container {
+      margin: 0 auto;
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 2rem;
+      border: 1px solid #334155;
+      overflow-x: auto;
+    }
+    .mermaid {
+      display: flex;
+      justify-content: center;
+      min-width: 2400px;
+    }
+    .mermaid svg {
+      width: 100%;
+      height: auto;
+    }
+    .legend {
+      margin: 1.5rem auto 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+    .legend-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .dot-source { background: #f97316; }
+    .dot-bronze { background: #a78bfa; }
+    .dot-silver { background: #38bdf8; }
+    .dot-gold { background: #fbbf24; }
+    .dot-quality { background: #f472b6; }
+    .dot-sharing { background: #34d399; }
+    .dot-analytics { background: #818cf8; }
+    .dot-orchestration { background: #94a3b8; }
+  </style>
+</head>
+<body>
+  <h1>EV Data Pipeline — Data Flow Architecture</h1>
+  <p class="subtitle">EV_PROJECT_DB &nbsp;|&nbsp; Medallion Architecture &nbsp;|&nbsp; Snowflake-Native</p>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+flowchart LR
+  subgraph SOURCE["EXTERNAL SOURCES"]
+    GCS["GCS Bucket<br/>(ev-landing-zone)"]
+    PUBSUB["GCP Pub/Sub<br/>Notification"]
+    POSTGRES["PostgreSQL<br/>(NeonDB)"]
+  end
+
+  subgraph BRONZE_LAYER["BRONZE — Raw Ingestion"]
+    STAGE["GCP_EV_STAGE<br/>(External Stage)"]
+    DIR_STREAM["GCS_FILES_STREAM<br/>(Directory Stream)"]
+    INGEST_TASK["TSK_INGEST_EV_DATA<br/>(Task: 1 min)"]
+    INGEST_SP["SP_INGEST_RAW_EV_DATA<br/>(Stored Procedure)"]
+    RAW["RAW_EV_DATA<br/>(VARIANT JSON)"]
+  end
+
+  subgraph SILVER_LAYER["SILVER — Cleansed"]
+    DT["CLEAN_EV_DATA_DT<br/>(Dynamic Table)<br/>INCREMENTAL 1 min"]
+    DT_STREAM["CLEAN_EV_DATA_DT_STREAM<br/>(Stream)"]
+  end
+
+  subgraph GOLD_LAYER["GOLD — Business-Ready"]
+    GOLD_TASK["TASK_SILVER_TO_GOLD<br/>(Task)"]
+    GOLD_SP["SP_TRANSFORM<br/>(Stored Procedure)"]
+    FACT_REG["FACT_EV_REGISTRATIONS<br/>(Traditional Table)<br/>4,986 rows"]
+    FACT_ICE["FACT_EV_MARKET_METRICS<br/>(Iceberg Table)<br/>Parquet on GCS"]
+    DIM_MFG["DIM_MANUFACTURERS_GOLD<br/>(Dimension)"]
+  end
+
+  subgraph SEMANTIC_LAYER["SEMANTIC + ANALYTICS"]
+    SEMANTIC_VIEW["EV_MARKET_ANALYTICS<br/>(Semantic View)"]
+    CORTEX["Cortex Analyst<br/>(Text-to-SQL)"]
+    STREAMLIT["EV_MARKET_CHAT<br/>(Streamlit App)"]
+  end
+
+  subgraph DQ_LAYER["DATA QUALITY"]
+    DMF["System + Custom DMFs<br/>(7 categories)"]
+    ERROR_SP["SP_DETECT_ERRORS"]
+    ERROR_TBL["ERROR_ROWS<br/>(Quarantine)"]
+    NOTIFY_SP["SP_NOTIFY_ERRORS<br/>(Email Alert)"]
+    RECON["V_ROW_COUNT<br/>_RECONCILIATION"]
+    DASHBOARD["DQ Dashboard<br/>Views"]
+  end
+
+  subgraph SHARING_LAYER["SHARING + INTEROP"]
+    SV_METRICS["SV_FACT_EV<br/>_MARKET_METRICS"]
+    SV_DIM["SV_DIM<br/>_MANUFACTURERS"]
+    SV_DQ["SV_DATA_QUALITY<br/>_SUMMARY"]
+    SHARE["EV_MARKET_DATA_SHARE"]
+    READER["EV_DATA_READER<br/>(Reader Account)"]
+    CATALOG_SYNC["Catalog Sync<br/>(Open Catalog)"]
+    EXT_ENGINES["Spark / Trino<br/>BigQuery"]
+  end
+
+  subgraph COST_GOV["COST GOVERNANCE"]
+    WH["COMPUTE_WH<br/>(X-Small)"]
+    RM_PIPE["EV_PIPELINE_MONITOR<br/>20 credits/month"]
+    RM_ACCT["EV_ACCOUNT_MONITOR<br/>50 credits/month"]
+  end
+
+  GCS -->|"JSON files"| STAGE
+  PUBSUB -->|"File event"| STAGE
+  STAGE --> DIR_STREAM
+  DIR_STREAM -->|"WHEN has_data"| INGEST_TASK
+  INGEST_TASK --> INGEST_SP
+  INGEST_SP -->|"COPY INTO"| RAW
+
+  RAW -->|"Auto-detect"| DT
+  DT --> DT_STREAM
+
+  DT_STREAM -->|"WHEN has_data"| GOLD_TASK
+  GOLD_TASK --> GOLD_SP
+  GOLD_SP -->|"Enrich"| FACT_REG
+  GOLD_SP -->|"Aggregate"| FACT_ICE
+  POSTGRES -->|"CDC"| DIM_MFG
+
+  FACT_REG --> SEMANTIC_VIEW
+  DIM_MFG --> SEMANTIC_VIEW
+  SEMANTIC_VIEW --> CORTEX
+  CORTEX -->|"SQL"| STREAMLIT
+
+  FACT_ICE --> SV_METRICS
+  DIM_MFG --> SV_DIM
+  SV_METRICS --> SHARE
+  SV_DIM --> SHARE
+  SV_DQ --> SHARE
+  SHARE --> READER
+  FACT_ICE --> CATALOG_SYNC
+  CATALOG_SYNC --> EXT_ENGINES
+
+  RAW -.->|"Monitor"| DMF
+  DT -.->|"Monitor"| DMF
+  FACT_REG -.->|"Monitor"| DMF
+  INGEST_TASK -->|"AFTER"| ERROR_SP
+  ERROR_SP --> ERROR_TBL
+  ERROR_TBL --> NOTIFY_SP
+  DMF -.-> RECON
+  ERROR_TBL -.-> DASHBOARD
+  DASHBOARD --> SV_DQ
+
+  WH -.->|"All workloads"| RM_PIPE
+  RM_PIPE -.->|"75/95/100%"| RM_ACCT
+
+  style SOURCE fill:#7c2d12,stroke:#f97316,color:#fed7aa
+  style BRONZE_LAYER fill:#2e1065,stroke:#a78bfa,color:#e9d5ff
+  style SILVER_LAYER fill:#0c4a6e,stroke:#38bdf8,color:#bae6fd
+  style GOLD_LAYER fill:#713f12,stroke:#fbbf24,color:#fef3c7
+  style SEMANTIC_LAYER fill:#312e81,stroke:#818cf8,color:#e0e7ff
+  style DQ_LAYER fill:#831843,stroke:#f472b6,color:#fce7f3
+  style SHARING_LAYER fill:#064e3b,stroke:#34d399,color:#d1fae5
+  style COST_GOV fill:#1c1917,stroke:#a8a29e,color:#e7e5e4
+    </pre>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot dot-source"></div>External Sources (GCS, Pub/Sub, PostgreSQL)</div>
+    <div class="legend-item"><div class="legend-dot dot-bronze"></div>Bronze — Raw JSON Ingestion</div>
+    <div class="legend-item"><div class="legend-dot dot-silver"></div>Silver — Cleansed &amp; Deduplicated</div>
+    <div class="legend-item"><div class="legend-dot dot-gold"></div>Gold — Business-Ready Tables</div>
+    <div class="legend-item"><div class="legend-dot dot-quality"></div>Data Quality — DMFs &amp; Error Quarantine</div>
+    <div class="legend-item"><div class="legend-dot dot-sharing"></div>Sharing — Secure Views &amp; Reader Account</div>
+    <div class="legend-item"><div class="legend-dot dot-analytics"></div>Analytics — Cortex Analyst &amp; Streamlit</div>
+    <div class="legend-item"><div class="legend-dot dot-orchestration"></div>Cost Governance — Resource Monitors</div>
+  </div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      flowchart: {
+        useMaxWidth: false,
+        htmlLabels: true,
+        curve: 'basis',
+        rankSpacing: 120,
+        nodeSpacing: 80,
+        padding: 30,
+        subGraphTitleMargin: { top: 20, bottom: 20 }
+      },
+      themeVariables: {
+        primaryColor: '#1e293b',
+        primaryTextColor: '#e2e8f0',
+        primaryBorderColor: '#475569',
+        lineColor: '#64748b',
+        secondaryColor: '#334155',
+        tertiaryColor: '#0f172a',
+        fontFamily: 'Segoe UI, system-ui, sans-serif',
+        fontSize: '40px'
+      }
+    });
+  </script>
+</body>
+</html>
