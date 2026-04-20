@@ -39,7 +39,7 @@
     .mermaid {
       display: flex;
       justify-content: center;
-      min-width: 2400px;
+      min-width: 3200px;
     }
     .mermaid svg {
       width: 100%;
@@ -48,7 +48,7 @@
     .legend {
       margin: 1.5rem auto 0;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 1rem;
     }
     .legend-item {
@@ -68,69 +68,82 @@
     .dot-bronze { background: #a78bfa; }
     .dot-silver { background: #38bdf8; }
     .dot-gold { background: #fbbf24; }
+    .dot-iceberg { background: #06b6d4; }
+    .dot-dbt { background: #fb923c; }
     .dot-quality { background: #f472b6; }
     .dot-sharing { background: #34d399; }
     .dot-analytics { background: #818cf8; }
-    .dot-orchestration { background: #94a3b8; }
+    .dot-cost { background: #94a3b8; }
   </style>
 </head>
 <body>
   <h1>EV Data Pipeline — Data Flow Architecture</h1>
-  <p class="subtitle">EV_PROJECT_DB &nbsp;|&nbsp; Medallion Architecture &nbsp;|&nbsp; Snowflake-Native</p>
+  <p class="subtitle">EV_PROJECT_DB &nbsp;|&nbsp; Medallion Architecture &nbsp;|&nbsp; Snowflake-Native &nbsp;|&nbsp; 3 Transformation Engines</p>
 
   <div class="diagram-container">
     <pre class="mermaid">
 flowchart LR
   subgraph SOURCE["EXTERNAL SOURCES"]
     GCS["GCS Bucket<br/>(ev-landing-zone)"]
-    PUBSUB["GCP Pub/Sub<br/>Notification"]
-    POSTGRES["PostgreSQL<br/>(NeonDB)"]
+    PUBSUB["GCP Pub/Sub<br/>(GCP_EV_PUBSUB_INT)"]
+    POSTGRES["PostgreSQL<br/>(NeonDB — CDC)"]
   end
 
   subgraph BRONZE_LAYER["BRONZE — Raw Ingestion"]
-    STAGE["GCP_EV_STAGE<br/>(External Stage)"]
-    DIR_STREAM["GCS_FILES_STREAM<br/>(Directory Stream)"]
-    INGEST_TASK["TSK_INGEST_EV_DATA<br/>(Task: 1 min)"]
-    INGEST_SP["SP_INGEST_RAW_EV_DATA<br/>(Stored Procedure)"]
-    RAW["RAW_EV_DATA<br/>(VARIANT JSON)"]
+    STAGE["GCP_EV_STAGE<br/>(External Stage<br/>+ Directory)"]
+    DIR_STREAM["GCS_FILES_STREAM<br/>(Stage Stream)"]
+    INGEST_TASK["TSK_INGEST_EV_DATA<br/>(Task: 1 min<br/>WHEN has_data)"]
+    INGEST_SP["SP_INGEST_RAW_EV_DATA<br/>(SQL — COPY INTO)"]
+    RAW["RAW_EV_DATA<br/>(VARIANT JSON<br/>Immutable Audit)"]
   end
 
-  subgraph SILVER_LAYER["SILVER — Cleansed"]
-    DT["CLEAN_EV_DATA_DT<br/>(Dynamic Table)<br/>INCREMENTAL 1 min"]
-    DT_STREAM["CLEAN_EV_DATA_DT_STREAM<br/>(Stream)"]
+  subgraph SILVER_LAYER["SILVER — Cleansed + Deduped"]
+    DT["CLEAN_EV_DATA_DT<br/>(Dynamic Table)<br/>INCREMENTAL 1 min<br/>FLATTEN + QUALIFY"]
+    DT_STREAM["CLEAN_EV_DATA_DT<br/>_STREAM"]
   end
 
-  subgraph GOLD_LAYER["GOLD — Business-Ready"]
-    GOLD_TASK["TASK_SILVER_TO_GOLD<br/>(Task)"]
-    GOLD_SP["SP_TRANSFORM<br/>(Stored Procedure)"]
-    FACT_REG["FACT_EV_REGISTRATIONS<br/>(Traditional Table)<br/>4,986 rows"]
-    FACT_ICE["FACT_EV_MARKET_METRICS<br/>(Iceberg Table)<br/>Parquet on GCS"]
-    DIM_MFG["DIM_MANUFACTURERS_GOLD<br/>(Dimension)"]
+  subgraph GOLD_LAYER["GOLD — Business-Ready (Native)"]
+    GOLD_TASK["TASK_SILVER_TO_GOLD<br/>(Stream-triggered)"]
+    GOLD_SP["SP_TRANSFORM_SILVER<br/>_TO_GOLD<br/>(Snowpark Python)"]
+    FACT_REG["FACT_EV_REGISTRATIONS<br/>(4,986 rows)"]
+    FACT_MET["FACT_EV_MARKET_METRICS<br/>(46 rows)"]
+    DIM_MFG["DIM_MANUFACTURERS<br/>_GOLD<br/>(35 rows — from PG)"]
+  end
+
+  subgraph ICEBERG_LAYER["ICEBERG — Open Format (GCS)"]
+    ICE_REG["FACT_EV_REGISTRATIONS<br/>(Iceberg — Parquet)"]
+    ICE_MET["FACT_EV_MARKET_METRICS<br/>(Iceberg — Parquet)"]
+    ICE_DIM["DIM_MANUFACTURERS<br/>_GOLD<br/>(Iceberg — Parquet)"]
+    EXT_ENGINES["Spark / Trino<br/>Flink / Dremio"]
+  end
+
+  subgraph DBT_LAYER["DBT_GOLD — dbt-Managed"]
+    DBT_STG["STG_EV_REGISTRATIONS<br/>(View)"]
+    DBT_FACT["FACT_EV_REGISTRATIONS<br/>(Table — 10 tests)"]
+    DBT_MET["FACT_EV_MARKET<br/>_METRICS<br/>(Table)"]
   end
 
   subgraph SEMANTIC_LAYER["SEMANTIC + ANALYTICS"]
-    SEMANTIC_VIEW["EV_MARKET_ANALYTICS<br/>(Semantic View)"]
+    SEM_YAML["ev_semantic_model.yaml<br/>(2 entities, 8 metrics<br/>13 dims, 7 VQRs)"]
     CORTEX["Cortex Analyst<br/>(Text-to-SQL)"]
     STREAMLIT["EV_MARKET_CHAT<br/>(Streamlit App)"]
   end
 
   subgraph DQ_LAYER["DATA QUALITY"]
-    DMF["System + Custom DMFs<br/>(7 categories)"]
-    ERROR_SP["SP_DETECT_ERRORS"]
-    ERROR_TBL["ERROR_ROWS<br/>(Quarantine)"]
-    NOTIFY_SP["SP_NOTIFY_ERRORS<br/>(Email Alert)"]
+    DQ_SP["SP_DETECT_ERRORS<br/>(Snowpark Python)<br/>5 validation types"]
+    ERR_TBL["ERROR_ROWS<br/>(Quarantine)"]
+    DUP_TBL["DUPLICATE_ROWS"]
+    NOTIFY["SP_NOTIFY_ERRORS<br/>(Email Alert)"]
+    FRESH["V_DATA_FRESHNESS<br/>(All layers)"]
     RECON["V_ROW_COUNT<br/>_RECONCILIATION"]
-    DASHBOARD["DQ Dashboard<br/>Views"]
+    DASH["V_DQ_DASHBOARD<br/>+ V_ERROR_TREND<br/>+ V_TOP_OFFENDERS<br/>+ V_PIPELINE_LINEAGE"]
   end
 
-  subgraph SHARING_LAYER["SHARING + INTEROP"]
-    SV_METRICS["SV_FACT_EV<br/>_MARKET_METRICS"]
-    SV_DIM["SV_DIM<br/>_MANUFACTURERS"]
-    SV_DQ["SV_DATA_QUALITY<br/>_SUMMARY"]
-    SHARE["EV_MARKET_DATA_SHARE"]
-    READER["EV_DATA_READER<br/>(Reader Account)"]
-    CATALOG_SYNC["Catalog Sync<br/>(Open Catalog)"]
-    EXT_ENGINES["Spark / Trino<br/>BigQuery"]
+  subgraph SHARING_LAYER["SHARING — Governed Access"]
+    SV_MET["SV_FACT_EV<br/>_MARKET_METRICS<br/>(Secure View)"]
+    SV_DIM["SV_DIM<br/>_MANUFACTURERS<br/>(Secure View)"]
+    SV_DQ["SV_DATA_QUALITY<br/>_SUMMARY<br/>(Secure View)"]
+    SHARE["EV_MARKET_DATA<br/>_SHARE"]
   end
 
   subgraph COST_GOV["COST GOVERNANCE"]
@@ -146,38 +159,52 @@ flowchart LR
   INGEST_TASK --> INGEST_SP
   INGEST_SP -->|"COPY INTO"| RAW
 
-  RAW -->|"Auto-detect"| DT
+  RAW -->|"Auto-refresh"| DT
   DT --> DT_STREAM
 
   DT_STREAM -->|"WHEN has_data"| GOLD_TASK
   GOLD_TASK --> GOLD_SP
-  GOLD_SP -->|"Enrich"| FACT_REG
-  GOLD_SP -->|"Aggregate"| FACT_ICE
-  POSTGRES -->|"CDC"| DIM_MFG
+  GOLD_SP -->|"DataFrame API"| FACT_REG
+  GOLD_SP -->|"group_by + agg"| FACT_MET
+  POSTGRES -->|"Connector CDC"| DIM_MFG
 
-  FACT_REG --> SEMANTIC_VIEW
-  DIM_MFG --> SEMANTIC_VIEW
-  SEMANTIC_VIEW --> CORTEX
-  CORTEX -->|"SQL"| STREAMLIT
+  FACT_REG -->|"Copy to Iceberg"| ICE_REG
+  FACT_MET -->|"Copy to Iceberg"| ICE_MET
+  DIM_MFG -->|"Copy to Iceberg"| ICE_DIM
+  ICE_REG -->|"Iceberg REST"| EXT_ENGINES
+  ICE_MET -->|"Parquet on GCS"| EXT_ENGINES
+  ICE_DIM -->|"Open format"| EXT_ENGINES
 
-  FACT_ICE --> SV_METRICS
-  DIM_MFG --> SV_DIM
-  SV_METRICS --> SHARE
+  DT -->|"Source ref"| DBT_STG
+  DBT_STG --> DBT_FACT
+  DBT_STG --> DBT_MET
+
+  ICE_REG --> SEM_YAML
+  ICE_DIM --> SEM_YAML
+  SEM_YAML --> CORTEX
+  CORTEX -->|"SQL + NL"| STREAMLIT
+
+  ICE_MET --> SV_MET
+  ICE_DIM --> SV_DIM
+  SV_MET --> SHARE
   SV_DIM --> SHARE
   SV_DQ --> SHARE
-  SHARE --> READER
-  FACT_ICE --> CATALOG_SYNC
-  CATALOG_SYNC --> EXT_ENGINES
 
-  RAW -.->|"Monitor"| DMF
-  DT -.->|"Monitor"| DMF
-  FACT_REG -.->|"Monitor"| DMF
-  INGEST_TASK -->|"AFTER"| ERROR_SP
-  ERROR_SP --> ERROR_TBL
-  ERROR_TBL --> NOTIFY_SP
-  DMF -.-> RECON
-  ERROR_TBL -.-> DASHBOARD
-  DASHBOARD --> SV_DQ
+  INGEST_TASK -->|"AFTER task"| DQ_SP
+  DQ_SP --> ERR_TBL
+  DQ_SP --> DUP_TBL
+  DQ_SP -->|"AFTER"| NOTIFY
+  ERR_TBL -.-> DASH
+  DUP_TBL -.-> DASH
+  DASH --> SV_DQ
+
+  RAW -.->|"Monitor"| FRESH
+  DT -.->|"Monitor"| FRESH
+  FACT_MET -.->|"Monitor"| FRESH
+  ICE_REG -.->|"Monitor"| FRESH
+  RAW -.-> RECON
+  DT -.-> RECON
+  FACT_MET -.-> RECON
 
   WH -.->|"All workloads"| RM_PIPE
   RM_PIPE -.->|"75/95/100%"| RM_ACCT
@@ -186,6 +213,8 @@ flowchart LR
   style BRONZE_LAYER fill:#2e1065,stroke:#a78bfa,color:#e9d5ff
   style SILVER_LAYER fill:#0c4a6e,stroke:#38bdf8,color:#bae6fd
   style GOLD_LAYER fill:#713f12,stroke:#fbbf24,color:#fef3c7
+  style ICEBERG_LAYER fill:#164e63,stroke:#06b6d4,color:#cffafe
+  style DBT_LAYER fill:#7c2d12,stroke:#fb923c,color:#fed7aa
   style SEMANTIC_LAYER fill:#312e81,stroke:#818cf8,color:#e0e7ff
   style DQ_LAYER fill:#831843,stroke:#f472b6,color:#fce7f3
   style SHARING_LAYER fill:#064e3b,stroke:#34d399,color:#d1fae5
@@ -196,12 +225,14 @@ flowchart LR
   <div class="legend">
     <div class="legend-item"><div class="legend-dot dot-source"></div>External Sources (GCS, Pub/Sub, PostgreSQL)</div>
     <div class="legend-item"><div class="legend-dot dot-bronze"></div>Bronze — Raw JSON Ingestion</div>
-    <div class="legend-item"><div class="legend-dot dot-silver"></div>Silver — Cleansed &amp; Deduplicated</div>
-    <div class="legend-item"><div class="legend-dot dot-gold"></div>Gold — Business-Ready Tables</div>
-    <div class="legend-item"><div class="legend-dot dot-quality"></div>Data Quality — DMFs &amp; Error Quarantine</div>
-    <div class="legend-item"><div class="legend-dot dot-sharing"></div>Sharing — Secure Views &amp; Reader Account</div>
-    <div class="legend-item"><div class="legend-dot dot-analytics"></div>Analytics — Cortex Analyst &amp; Streamlit</div>
-    <div class="legend-item"><div class="legend-dot dot-orchestration"></div>Cost Governance — Resource Monitors</div>
+    <div class="legend-item"><div class="legend-dot dot-silver"></div>Silver — Dynamic Table (Cleanse + Dedup)</div>
+    <div class="legend-item"><div class="legend-dot dot-gold"></div>Gold — Snowpark Python Transforms</div>
+    <div class="legend-item"><div class="legend-dot dot-iceberg"></div>Iceberg — Open Format on GCS</div>
+    <div class="legend-item"><div class="legend-dot dot-dbt"></div>DBT Gold — dbt-Managed (10 tests)</div>
+    <div class="legend-item"><div class="legend-dot dot-quality"></div>Data Quality — Snowpark DQ + Freshness</div>
+    <div class="legend-item"><div class="legend-dot dot-sharing"></div>Sharing — Secure Views + Outbound Share</div>
+    <div class="legend-item"><div class="legend-dot dot-analytics"></div>Analytics — Cortex Analyst + Streamlit</div>
+    <div class="legend-item"><div class="legend-dot dot-cost"></div>Cost Governance — Resource Monitors</div>
   </div>
 
   <script type="module">
@@ -213,10 +244,10 @@ flowchart LR
         useMaxWidth: false,
         htmlLabels: true,
         curve: 'basis',
-        rankSpacing: 120,
-        nodeSpacing: 80,
-        padding: 30,
-        subGraphTitleMargin: { top: 20, bottom: 20 }
+        rankSpacing: 140,
+        nodeSpacing: 90,
+        padding: 35,
+        subGraphTitleMargin: { top: 25, bottom: 25 }
       },
       themeVariables: {
         primaryColor: '#1e293b',

@@ -1,12 +1,17 @@
 -- ============================================================
--- SILVER SCHEMA
+-- 03_SILVER.sql
+-- Cleansed + deduplicated layer: Dynamic Table with
+-- INCREMENTAL refresh, stream for Gold trigger
 -- ============================================================
 
--- 7. Dynamic Table (INCREMENTAL): Flattens JSON into structured columns
-CREATE OR REPLACE DYNAMIC TABLE EV_PROJECT_DB.SILVER.CLEAN_EV_DATA_DT
-  TARGET_LAG = '1 MINUTE'
-  WAREHOUSE  = COMPUTE_WH
+USE SCHEMA EV_PROJECT_DB.SILVER;
+
+-- Dynamic Table — JSON flatten, type cast, null rejection, dedup
+CREATE OR REPLACE DYNAMIC TABLE CLEAN_EV_DATA_DT
+  TARGET_LAG = '1 minute'
   REFRESH_MODE = INCREMENTAL
+  INITIALIZE = ON_CREATE
+  WAREHOUSE = COMPUTE_WH
 AS
   SELECT
     f.value[8]::VARCHAR   AS VIN,
@@ -28,7 +33,6 @@ AS
   WHERE f.value[8] IS NOT NULL
   QUALIFY ROW_NUMBER() OVER (PARTITION BY f.value[8]::VARCHAR ORDER BY SOURCE_FILE DESC) = 1;
 
--- 8. Stream: Captures new rows in the dynamic table to trigger gold refresh
-CREATE OR REPLACE STREAM EV_PROJECT_DB.SILVER.CLEAN_EV_DATA_DT_STREAM
-  ON DYNAMIC TABLE EV_PROJECT_DB.SILVER.CLEAN_EV_DATA_DT
-  SHOW_INITIAL_ROWS = FALSE;
+-- Stream on Dynamic Table (triggers Gold transformation)
+CREATE OR REPLACE STREAM CLEAN_EV_DATA_DT_STREAM
+  ON DYNAMIC TABLE CLEAN_EV_DATA_DT;

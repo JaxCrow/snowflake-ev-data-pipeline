@@ -1,0 +1,16 @@
+SELECT
+    VIN,
+    MAKE,
+    MODEL,
+    MODEL_YEAR,
+    EV_TYPE,
+    ELECTRIC_RANGE,
+    BASE_MSRP,
+    LEGISLATIVE_DISTRICT,
+    DOL_VEHICLE_ID,
+    VEHICLE_LOCATION,
+    ELECTRIC_UTILITY,
+    CENSUS_TRACT_2020,
+    COUNTIES,
+    SOURCE_FILE
+FROM {{ source('silver', 'clean_ev_data_dt') }}

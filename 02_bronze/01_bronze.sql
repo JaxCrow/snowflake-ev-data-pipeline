@@ -1,29 +1,37 @@
 -- ============================================================
--- BRONZE SCHEMA
+-- 02_BRONZE.sql
+-- Raw ingestion layer: stage, file format, stream, table,
+-- ingestion SP (Snowpark Python), task DAG
 -- ============================================================
 
--- 1. External Stage: GCS landing zone for raw EV data files
-CREATE OR REPLACE STAGE EV_PROJECT_DB.BRONZE.GCP_EV_STAGE
-  URL = 'gcs://ev-landing-zone-lordrivas/landing/'
+USE SCHEMA EV_PROJECT_DB.BRONZE;
+
+-- File Format
+CREATE OR REPLACE FILE FORMAT EV_PROJECT_DB.BRONZE.JSON_FORMAT
+  TYPE = 'JSON'
+  STRIP_OUTER_ARRAY = FALSE;
+
+-- External Stage (GCS with directory enabled for stream)
+CREATE OR REPLACE STAGE GCP_EV_STAGE
   STORAGE_INTEGRATION = GCP_EV_STORAGE_INT
-  DIRECTORY = (ENABLE = TRUE);
+  URL = 'gcs://ev-landing-zone-lordrivas/landing/'
+  DIRECTORY = (ENABLE = TRUE AUTO_REFRESH = TRUE NOTIFICATION_INTEGRATION = 'GCP_EV_PUBSUB_INT');
 
--- 2. Table: Raw JSON data ingested from GCS
-CREATE OR REPLACE TABLE EV_PROJECT_DB.BRONZE.RAW_EV_DATA (
+-- Raw data table (immutable audit trail)
+CREATE OR REPLACE TABLE RAW_EV_DATA (
     JSON_DATA VARIANT,
-    SOURCE_FILE VARCHAR(16777216),
-    SOURCE_FILE_ROW NUMBER(38,0),
-    LOAD_TIMESTAMP TIMESTAMP_LTZ(9) DEFAULT CURRENT_TIMESTAMP()
+    SOURCE_FILE VARCHAR,
+    SOURCE_FILE_ROW NUMBER,
+    LOAD_TIMESTAMP TIMESTAMP_LTZ DEFAULT CURRENT_TIMESTAMP()
 );
+ALTER TABLE RAW_EV_DATA SET CHANGE_TRACKING = TRUE;
 
+-- Directory stream (detects new files in GCS)
+CREATE OR REPLACE STREAM GCS_FILES_STREAM
+  ON STAGE GCP_EV_STAGE;
 
-
--- 4. Stream: Detects new files arriving in the GCS stage
-CREATE OR REPLACE STREAM EV_PROJECT_DB.BRONZE.GCS_FILES_STREAM
-  ON DIRECTORY(@EV_PROJECT_DB.BRONZE.GCP_EV_STAGE);
-
--- 5. Stored Procedure: Loads new files from GCS into RAW_EV_DATA
-CREATE OR REPLACE PROCEDURE EV_PROJECT_DB.BRONZE.SP_INGEST_RAW_EV_DATA()
+-- Ingestion Stored Procedure (Snowpark Python)
+CREATE OR REPLACE PROCEDURE SP_INGEST_RAW_EV_DATA()
 RETURNS VARCHAR
 LANGUAGE PYTHON
 RUNTIME_VERSION = '3.11'
@@ -51,12 +59,24 @@ def main(session):
         return f"FAILURE: {str(e)}"
 $$;
 
--- 6. Task: Runs every 1 min; fires SP when stage stream has new files
-CREATE OR REPLACE TASK EV_PROJECT_DB.BRONZE.TSK_INGEST_EV_DATA
+-- Task DAG: Root task — stream-triggered ingestion
+CREATE OR REPLACE TASK TSK_INGEST_EV_DATA
   WAREHOUSE = COMPUTE_WH
   SCHEDULE = '1 MINUTE'
   WHEN SYSTEM$STREAM_HAS_DATA('EV_PROJECT_DB.BRONZE.GCS_FILES_STREAM')
 AS
   CALL EV_PROJECT_DB.BRONZE.SP_INGEST_RAW_EV_DATA();
 
-ALTER TASK EV_PROJECT_DB.BRONZE.TSK_INGEST_EV_DATA RESUME;
+-- Task DAG: Chained — error detection (fires after ingestion)
+CREATE OR REPLACE TASK TSK_ERROR_DETECTION
+  WAREHOUSE = COMPUTE_WH
+  AFTER EV_PROJECT_DB.BRONZE.TSK_INGEST_EV_DATA
+AS
+  CALL EV_PROJECT_DB.DATA_QUALITY.SP_DETECT_ERRORS();
+
+-- Task DAG: Chained — error notification (fires after detection)
+CREATE OR REPLACE TASK TSK_ERROR_NOTIFICATION
+  WAREHOUSE = COMPUTE_WH
+  AFTER EV_PROJECT_DB.BRONZE.TSK_ERROR_DETECTION
+AS
+  CALL EV_PROJECT_DB.DATA_QUALITY.SP_NOTIFY_ERRORS();

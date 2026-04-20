@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: stg_ev_registrations
+    description: Staging view over the Silver Dynamic Table for downstream dbt models
+    columns:
+      - name: VIN
+        description: Vehicle Identification Number
+        tests:
+          - not_null
+          - unique
+
+  - name: fact_ev_registrations
+    description: Business-ready fact table with validated EV registrations
+    columns:
+      - name: VIN
+        tests:
+          - not_null
+          - unique
+      - name: MAKE
+        tests:
+          - not_null
+      - name: MODEL_YEAR
+        tests:
+          - not_null
+      - name: ELECTRIC_RANGE
+        tests:
+          - not_null
+
+  - name: fact_ev_market_metrics
+    description: Aggregated market metrics by manufacturer and EV type
+    columns:
+      - name: TOTAL_VEHICLES
+        tests:
+          - not_null
+      - name: MAKE
+        tests:
+          - not_null
+      - name: EV_TYPE
+        tests:
+          - not_null

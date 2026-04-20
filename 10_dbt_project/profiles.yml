@@ -1,0 +1,12 @@
+ev_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: dr77061
+      user: JAXDAMON
+      role: ACCOUNTADMIN
+      database: EV_PROJECT_DB
+      warehouse: COMPUTE_WH
+      schema: DBT_GOLD
+      threads: 4

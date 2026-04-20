@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: silver
+    database: EV_PROJECT_DB
+    schema: SILVER
+    tables:
+      - name: clean_ev_data_dt
+        description: Cleansed and deduplicated EV registration data from Silver Dynamic Table
+
+  - name: gold
+    database: EV_PROJECT_DB
+    schema: GOLD
+    tables:
+      - name: dim_manufacturers_gold
+        description: Manufacturer dimension table replicated from PostgreSQL
