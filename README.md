@@ -1,19 +1,22 @@
 # Snowflake EV Data Pipeline
 
-End-to-end data engineering pipeline built on Snowflake demonstrating medallion architecture, multiple transformation engines, open table formats, external data integration via PostgreSQL CDC, and conversational analytics.
+End-to-end data engineering pipeline built on Snowflake demonstrating medallion architecture, multiple transformation engines, open table formats, external data integration via PostgreSQL CDC, and conversational analytics on Azure.
 
 ## Architecture
 
 ```
-GCS (JSON) --> Bronze (Raw) --> Silver (Dynamic Table) --> Gold (Snowpark Python)
-                                                            |
-                                              PostgreSQL Catalog (CDC every 12h)
-                                                            |
-                                                            +--> Enriched Metrics
-                                                            +--> Iceberg (Open Format on GCS)
-                                                            +--> dbt Gold (Testable SQL)
-                                                            +--> Sharing (Secure Views)
-                                                            +--> Cortex Analyst + Streamlit
+Azure Blob Storage (EV Data) + PostgreSQL (Catalog)
+         ↓
+    Event Grid + Snowpipe / CDC (12h)
+         ↓
+[BRONZE] Raw JSON → [SILVER] Dynamic Table → [GOLD] Snowpark + dbt
+         ↓
+    Enriched with PostgreSQL Catalog
+         ↓
+    ├── Iceberg (Open Format on Azure Blob)
+    ├── dbt Gold (Testable SQL)
+    ├── Secure Sharing (Secure Views)
+    └── Cortex Analyst + Streamlit (Chat UI)
 ```
 
 ## Project Structure
