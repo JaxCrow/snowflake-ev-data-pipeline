@@ -5,16 +5,17 @@
 2. [Architecture](#architecture)
 3. [Data Flow](#data-flow)
 4. [Layer Details](#layer-details)
-5. [Transformation Approaches](#transformation-approaches)
-6. [Orchestration](#orchestration)
-7. [Data Quality](#data-quality)
-8. [Open Table Formats (Iceberg)](#open-table-formats-iceberg)
-9. [Data Sharing](#data-sharing)
-10. [Semantic Model & Conversational Analytics](#semantic-model--conversational-analytics)
-11. [Cost Governance](#cost-governance)
-12. [Deployment Guide](#deployment-guide)
-13. [Operational Runbook](#operational-runbook)
-14. [Design Decisions & Trade-offs](#design-decisions--trade-offs)
+5. [External Data Integration (PostgreSQL CDC)](#external-data-integration-postgresql-cdc)
+6. [Transformation Approaches](#transformation-approaches)
+7. [Orchestration](#orchestration)
+8. [Data Quality](#data-quality)
+9. [Open Table Formats (Iceberg)](#open-table-formats-iceberg)
+10. [Data Sharing](#data-sharing)
+11. [Semantic Model & Conversational Analytics](#semantic-model--conversational-analytics)
+12. [Cost Governance](#cost-governance)
+13. [Deployment Guide](#deployment-guide)
+14. [Operational Runbook](#operational-runbook)
+15. [Design Decisions & Trade-offs](#design-decisions--trade-offs)
 
 ---
 
@@ -30,6 +31,7 @@ An end-to-end Snowflake-native data engineering pipeline that ingests electric v
 ### Key Capabilities
 - Event-driven ingestion with zero idle compute cost
 - Sub-minute data freshness via Dynamic Tables
+- External data integration via PostgreSQL CDC (12-hour sync schedule)
 - Three transformation engines: Dynamic Tables, Snowpark Python, dbt
 - Open-format interoperability via Apache Iceberg
 - Comprehensive data quality with 5 validation types
@@ -40,22 +42,30 @@ An end-to-end Snowflake-native data engineering pipeline that ingests electric v
 
 ## Architecture
 
-### Medallion Architecture
+### Medallion Architecture with External Integration
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│    BRONZE    │     │    SILVER    │     │     GOLD     │
-│  Raw JSON    │────>│ Dynamic Table│────>│ Snowpark +   │
-│  (VARIANT)   │     │ (Incremental)│     │ dbt Models   │
-└──────────────┘     └──────────────┘     └──────┬───────┘
-                                                  │
-                          ┌───────────────────────┼───────────────────────┐
-                          │                       │                       │
-                   ┌──────▼──────┐    ┌──────────▼────────┐   ┌─────────▼────────┐
-                   │   ICEBERG   │    │     SHARING       │   │  CORTEX ANALYST  │
-                   │ Parquet/GCS │    │  Secure Views +   │   │  + Streamlit     │
-                   │ Open Format │    │  Outbound Share   │   │  Chat Interface  │
-                   └─────────────┘    └───────────────────┘   └──────────────────┘
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │                         EXTERNAL DATA SOURCE                            │
+    │                    PostgreSQL Vehicle Catalog                           │
+    └─────────────────────────────────────────────────────────────────────────┘
+                                        │
+                    CDC Sync (Every 12 hours) │
+                                        │
+    ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+    │    BRONZE    │     │    SILVER    │     │     GOLD     │────>│PostgreSQL    │
+    │  Raw JSON    │────>│ Dynamic Table│────>│ Snowpark +   │  ⟲  │ Catalog Dim  │
+    │  (VARIANT)   │     │ (Incremental)│     │ dbt Models   │     │ (CDC Synced) │
+    └──────────────┘     └──────────────┘     └──────┬───────┘     └──────────────┘
+                                                      │
+                          ┌───────────────────────────┼───────────────────────┐
+                          │                           │                       │
+                   ┌──────▼──────┐    ┌──────────────▼────────┐   ┌─────────▼────────┐
+                   │   ICEBERG   │    │     SHARING           │   │  CORTEX ANALYST  │
+                   │ Parquet/GCS │    │  Secure Views +       │   │  + Streamlit     │
+                   │ Open Format │    │  Outbound Share       │   │  Chat Interface  │
+                   └─────────────┘    │  (Enriched Metrics)   │   └──────────────────┘
+                                      └───────────────────────┘
 ```
 
 ### Schema Layout
@@ -206,6 +216,93 @@ df_gold = df_silver.group_by("MAKE", "EV_TYPE").agg(
 - `unique` + `not_null` on VIN (staging + gold)
 - `not_null` on MAKE, MODEL_YEAR, ELECTRIC_RANGE (gold fact)
 - `not_null` on TOTAL_VEHICLES, MAKE, EV_TYPE (gold metrics)
+
+---
+
+## External Data Integration (PostgreSQL CDC)
+
+### Overview
+
+The pipeline integrates external reference data from a PostgreSQL database containing a vehicle catalog (manufacturers, vehicle classes, fuel types, etc.). This dimension table is replicated to Snowflake's GOLD schema via CDC (Change Data Capture) with a **12-hour sync schedule** to minimize compute credits while maintaining data freshness.
+
+**Architecture:**
+```
+PostgreSQL Vehicle Catalog
+         ↓ (CDC every 12h)
+PG_VEHICLE_CATALOG_STAGING (staging table)
+         ↓ (MERGE + SCD Type 2)
+DIM_VEHICLE_CATALOG_GOLD (current version)
+         ↓ (historical archive)
+DIM_VEHICLE_CATALOG_HISTORY (audit trail)
+         ↓ (LEFT JOIN)
+VW_EV_METRICS_ENRICHED (enriched facts)
+```
+
+### Objects
+
+| Object | Type | Purpose |
+|--------|------|---------|
+| `PG_VEHICLE_CATALOG_STAGING` | Table | Temporary staging for PostgreSQL CDC sync |
+| `DIM_VEHICLE_CATALOG_GOLD` | Table | Current vehicle catalog with CDC metadata |
+| `DIM_VEHICLE_CATALOG_HISTORY` | Table | Historical versions (SCD Type 2) for audit trail |
+| `SP_SYNC_PG_VEHICLE_CATALOG_CDC` | SP (Snowpark Python) | Executes CDC MERGE + SCD logic + history archive |
+| `TSK_PG_CDC_SYNC` | Task | Scheduled every 12 hours (CRON: `0 */12 * * * UTC`) |
+| `VW_EV_METRICS_ENRICHED` | View | LEFT JOIN of FACT_EV_MARKET_METRICS + vehicle catalog |
+| `VW_CDC_SYNC_MONITOR` | View | CDC freshness monitoring (hours since last sync) |
+
+### CDC Sync Procedure
+
+**Execution Steps:**
+
+1. **Fetch Changes:** Read staging table (populated by Snowflake Connector)
+2. **SCD Type 2 Logic:** 
+   - Match on `CATALOG_ID`
+   - If matched (existing record): Mark `IS_CURRENT = FALSE` (expire old version)
+   - If not matched (new record): Insert with `IS_CURRENT = TRUE`
+3. **Archive to History:** Insert changed records to `DIM_VEHICLE_CATALOG_HISTORY` with `VALID_FROM`, `VALID_TO`, and CDC operation type
+4. **Truncate Staging:** Clear staging table after successful merge (consumed CDC records)
+5. **Error Handling:** Catch and log errors; notify operators if sync fails
+
+**Cost Optimization:**
+- **12-hour schedule** (vs continuous): Reduces PostgreSQL connection overhead and Snowflake compute
+- **MERGE operation** (vs DELETE + INSERT): Single DML reduces transaction overhead
+- **SCD Type 2 append-only**: History is append-only (cheaper than UPDATE-heavy patterns)
+
+### Monitoring
+
+**VW_CDC_SYNC_MONITOR** tracks:
+- Total records in DIM_VEHICLE_CATALOG_GOLD
+- Last sync timestamp (MAX(CDC_SYNCED_AT))
+- Hours since last sync (should be 0-12)
+- Count of current records (IS_CURRENT = TRUE)
+
+**Alert Rules (in production):**
+- If `HOURS_SINCE_SYNC > 13` → TSK_PG_CDC_SYNC failed; investigate task history
+- If `CURRENT_RECORDS = 0` → Sync cleared the dimension unintentionally; rollback from history
+
+### Enriched Fact Table
+
+**VW_EV_METRICS_ENRICHED** extends FACT_EV_MARKET_METRICS with catalog columns:
+
+```sql
+SELECT
+    f.MAKE,
+    f.EV_TYPE,
+    f.TOTAL_VEHICLES,
+    f.AVG_RANGE,
+    f.MAX_MSRP,
+    c.VEHICLE_CLASS,
+    c.VEHICLE_CATEGORY,
+    c.FUEL_TYPE,
+    c.SEATING_CAPACITY,
+    c.CDC_SYNCED_AT
+FROM FACT_EV_MARKET_METRICS f
+LEFT JOIN DIM_VEHICLE_CATALOG_GOLD c
+  ON f.MAKE = c.MANUFACTURER_NAME
+  AND c.IS_CURRENT = TRUE
+```
+
+This view powers business analytics dashboards and Cortex Analyst semantic models.
 
 ---
 
