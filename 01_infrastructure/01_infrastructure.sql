@@ -10,31 +10,34 @@ CREATE WAREHOUSE IF NOT EXISTS COMPUTE_WH
   AUTO_SUSPEND = 300
   AUTO_RESUME = TRUE;
 
--- Storage Integration (GCS)
-CREATE OR REPLACE STORAGE INTEGRATION GCP_EV_STORAGE_INT
+-- Storage Integration (Azure Blob Storage)
+CREATE OR REPLACE STORAGE INTEGRATION AZURE_EV_STORAGE_INT
   TYPE = EXTERNAL_STAGE
-  STORAGE_PROVIDER = 'GCS'
+  STORAGE_PROVIDER = 'AZURE'
+  AZURE_TENANT_ID = '92d1d6ee-9c8b-4a1f-9fec-3da3e0b8b618'
   ENABLED = TRUE
-  STORAGE_ALLOWED_LOCATIONS = ('gcs://ev-landing-zone-lordrivas/');
+  STORAGE_ALLOWED_LOCATIONS = ('azure://evpipedev346059.blob.core.windows.net/landing/');
 
--- Notification Integration (Inbound — GCS Pub/Sub)
-CREATE OR REPLACE NOTIFICATION INTEGRATION GCP_EV_PUBSUB_INT
+-- Notification Integration (Inbound — Azure Event Grid via Queue)
+CREATE OR REPLACE NOTIFICATION INTEGRATION AZURE_EV_EVENTGRID_INT
   TYPE = QUEUE
-  NOTIFICATION_PROVIDER = GCP_PUBSUB
+  NOTIFICATION_PROVIDER = AZURE_STORAGE_QUEUE
   ENABLED = TRUE
-  GCP_PUBSUB_SUBSCRIPTION_NAME = '<YOUR_PUBSUB_SUBSCRIPTION>';
+  AZURE_STORAGE_QUEUE_PRIMARY_URI = 'https://evpipedev346059.queue.core.windows.net/ev-ingest-queue'
+  AZURE_TENANT_ID = '92d1d6ee-9c8b-4a1f-9fec-3da3e0b8b618';
 
 -- Notification Integration (Outbound — Email for DQ Alerts)
 CREATE OR REPLACE NOTIFICATION INTEGRATION EV_DQ_EMAIL_INT
   TYPE = EMAIL
   ENABLED = TRUE;
 
--- External Volume (GCS for Iceberg tables)
-CREATE OR REPLACE EXTERNAL VOLUME GCP_ICEBERG_VOLUME
+-- External Volume (Azure Blob Storage for Iceberg tables)
+CREATE OR REPLACE EXTERNAL VOLUME AZURE_ICEBERG_VOLUME
   STORAGE_LOCATIONS = (
     (
-      NAME = 'gcs-iceberg'
-      STORAGE_BASE_URL = 'gcs://<YOUR_ICEBERG_BUCKET>/'
+      NAME = 'azure-iceberg'
+      STORAGE_PROVIDER = 'AZURE'
+      STORAGE_BASE_URL = 'azure://evpipedev346059.blob.core.windows.net/iceberg/'
     )
   )
   ALLOW_WRITES = TRUE;

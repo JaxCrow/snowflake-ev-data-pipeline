@@ -11,7 +11,7 @@
 ## Core Principles
 
 ### I. Cost Optimization & Free-First Principle
-Every design decision must demonstrate cost awareness. Storage footprint, compute cycles, data transfer, and Snowflake resource consumption must be justified. Use Iceberg on GCS for cold data, Dynamic Tables for near-real-time efficiency, and stream-triggered tasks to avoid wasted compute.
+Every design decision must demonstrate cost awareness. Storage footprint, compute cycles, data transfer, and Snowflake resource consumption must be justified. Use Iceberg on Azure Blob Storage for cold data, Dynamic Tables for near-real-time efficiency, and stream-triggered tasks to avoid wasted compute.
 
 **Free-First Rule**: When solving a problem, prefer free or open-source solutions. Paid solutions are only considered after deep analysis against all 9 core principles, and only when they deliver significant convenience gains that justify the cost differential.
 
@@ -56,7 +56,7 @@ Data access is role-based and minimal. Secrets (API keys, connection strings) ar
 **Non-negotiable**: No credentials in code; all external integrations reviewed for security posture before merging.
 
 ### IX. Portability & Open Formats
-Core data lives in open formats (Iceberg on GCS) to enable multi-tool consumption. Avoid lock-in to Snowflake-only features for critical tables. dbt models remain portable to other SQL dialects where possible.
+Core data lives in open formats (Iceberg on Azure Blob Storage) to enable multi-tool consumption. Avoid lock-in to Snowflake-only features for critical tables. dbt models remain portable to other SQL dialects where possible.
 
 **Non-negotiable**: Gold-layer critical fact/dimension tables must be available in Iceberg format.
 

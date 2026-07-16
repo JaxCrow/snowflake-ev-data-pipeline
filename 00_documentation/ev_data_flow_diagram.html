@@ -84,14 +84,14 @@
     <pre class="mermaid">
 flowchart LR
   subgraph SOURCE["EXTERNAL SOURCES"]
-    GCS["GCS Bucket<br/>(ev-landing-zone)"]
-    PUBSUB["GCP Pub/Sub<br/>(GCP_EV_PUBSUB_INT)"]
+    AZURE_BLOB["Azure Blob Storage<br/>(ev-landing-zone)"]
+    EVENTGRID["Azure Event Grid<br/>(AZURE_EV_EVENTGRID_INT)"]
     POSTGRES["PostgreSQL<br/>(NeonDB — CDC)"]
   end
 
   subgraph BRONZE_LAYER["BRONZE — Raw Ingestion"]
-    STAGE["GCP_EV_STAGE<br/>(External Stage<br/>+ Directory)"]
-    DIR_STREAM["GCS_FILES_STREAM<br/>(Stage Stream)"]
+    STAGE["AZURE_EV_STAGE<br/>(External Stage<br/>+ Directory)"]
+    DIR_STREAM["AZURE_FILES_STREAM<br/>(Stage Stream)"]
     INGEST_TASK["TSK_INGEST_EV_DATA<br/>(Task: 1 min<br/>WHEN has_data)"]
     INGEST_SP["SP_INGEST_RAW_EV_DATA<br/>(SQL — COPY INTO)"]
     RAW["RAW_EV_DATA<br/>(VARIANT JSON<br/>Immutable Audit)"]
@@ -110,7 +110,7 @@ flowchart LR
     DIM_MFG["DIM_MANUFACTURERS<br/>_GOLD<br/>(35 rows — from PG)"]
   end
 
-  subgraph ICEBERG_LAYER["ICEBERG — Open Format (GCS)"]
+  subgraph ICEBERG_LAYER["ICEBERG — Open Format (Azure Blob)"]
     ICE_REG["FACT_EV_REGISTRATIONS<br/>(Iceberg — Parquet)"]
     ICE_MET["FACT_EV_MARKET_METRICS<br/>(Iceberg — Parquet)"]
     ICE_DIM["DIM_MANUFACTURERS<br/>_GOLD<br/>(Iceberg — Parquet)"]
@@ -152,8 +152,8 @@ flowchart LR
     RM_ACCT["EV_ACCOUNT_MONITOR<br/>50 credits/month"]
   end
 
-  GCS -->|"JSON files"| STAGE
-  PUBSUB -->|"File event"| STAGE
+  AZURE_BLOB -->|"JSON files"| STAGE
+  EVENTGRID -->|"File event"| STAGE
   STAGE --> DIR_STREAM
   DIR_STREAM -->|"WHEN has_data"| INGEST_TASK
   INGEST_TASK --> INGEST_SP
@@ -172,7 +172,7 @@ flowchart LR
   FACT_MET -->|"Copy to Iceberg"| ICE_MET
   DIM_MFG -->|"Copy to Iceberg"| ICE_DIM
   ICE_REG -->|"Iceberg REST"| EXT_ENGINES
-  ICE_MET -->|"Parquet on GCS"| EXT_ENGINES
+  ICE_MET -->|"Parquet on Azure Blob Storage"| EXT_ENGINES
   ICE_DIM -->|"Open format"| EXT_ENGINES
 
   DT -->|"Source ref"| DBT_STG
@@ -223,11 +223,11 @@ flowchart LR
   </div>
 
   <div class="legend">
-    <div class="legend-item"><div class="legend-dot dot-source"></div>External Sources (GCS, Pub/Sub, PostgreSQL)</div>
+    <div class="legend-item"><div class="legend-dot dot-source"></div>External Sources (Azure Blob, Event Grid, PostgreSQL)</div>
     <div class="legend-item"><div class="legend-dot dot-bronze"></div>Bronze — Raw JSON Ingestion</div>
     <div class="legend-item"><div class="legend-dot dot-silver"></div>Silver — Dynamic Table (Cleanse + Dedup)</div>
     <div class="legend-item"><div class="legend-dot dot-gold"></div>Gold — Snowpark Python Transforms</div>
-    <div class="legend-item"><div class="legend-dot dot-iceberg"></div>Iceberg — Open Format on GCS</div>
+    <div class="legend-item"><div class="legend-dot dot-iceberg"></div>Iceberg — Open Format on Azure Blob Storage</div>
     <div class="legend-item"><div class="legend-dot dot-dbt"></div>DBT Gold — dbt-Managed (10 tests)</div>
     <div class="legend-item"><div class="legend-dot dot-quality"></div>Data Quality — Snowpark DQ + Freshness</div>
     <div class="legend-item"><div class="legend-dot dot-sharing"></div>Sharing — Secure Views + Outbound Share</div>

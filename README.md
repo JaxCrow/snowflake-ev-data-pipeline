@@ -29,7 +29,7 @@ Azure Blob Storage (EV Data) + PostgreSQL (Catalog)
 | `04_gold/` | Snowpark Python transformation SP, fact/dimension tables, stream-triggered task |
 | `04b_external_data_integration/` | PostgreSQL CDC connector, vehicle catalog replication, 12-hour sync schedule |
 | `05_data_quality/` | Snowpark Python DQ SP (5 validation types), error quarantine, 8 monitoring views |
-| `06_iceberg/` | 3 Iceberg tables on GCS external volume for open-format interoperability |
+| `06_iceberg/` | 3 Iceberg tables on Azure Blob Storage external volume for open-format interoperability |
 | `07_sharing/` | 3 secure views + outbound share |
 | `08_cost_governance/` | Resource monitors (warehouse + account level) |
 | `09_analyst_streamlit/` | Streamlit chat app + Cortex Analyst semantic model YAML |
@@ -43,7 +43,7 @@ Azure Blob Storage (EV Data) + PostgreSQL (Catalog)
 - **External Data Integration**: PostgreSQL CDC for vehicle catalog with 12-hour sync schedule (cost-optimized)
 - **Event-Driven Orchestration**: Streams + Tasks with WHEN guards (zero cost when idle)
 - **Comprehensive DQ**: 5 validation types, cross-layer reconciliation, freshness monitoring, email alerts
-- **Open Table Formats**: Iceberg tables on GCS (Parquet), queryable by Spark/Trino/Flink
+- **Open Table Formats**: Iceberg tables on Azure Blob Storage (Parquet), queryable by Spark/Trino/Flink
 - **Data Sharing**: Outbound share with secure views over Iceberg tables
 - **Conversational Analytics**: Cortex Analyst semantic model + Streamlit chat interface
 - **Cost Governance**: 2 resource monitors with tiered alerts (notify → suspend → force)
@@ -61,5 +61,5 @@ Run SQL files in numbered order (01 through 10). Each file is self-contained.
 - dbt Core (transformation + testing)
 - Cortex Analyst (text-to-SQL)
 - Streamlit (chat UI)
-- GCS (object storage)
-- GCP Pub/Sub (event notifications)
+- Azure Blob Storage (object storage)
+- Azure Event Grid (event notifications)

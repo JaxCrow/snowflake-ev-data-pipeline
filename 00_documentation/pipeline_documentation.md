@@ -21,7 +21,7 @@
 
 ## Overview
 
-An end-to-end Snowflake-native data engineering pipeline that ingests electric vehicle registration data from Google Cloud Storage, transforms it through a medallion architecture, and surfaces insights via a conversational analytics interface powered by Cortex Analyst.
+An end-to-end Snowflake-native data engineering pipeline that ingests electric vehicle registration data from Azure Blob Storage, transforms it through a medallion architecture, and surfaces insights via a conversational analytics interface powered by Cortex Analyst.
 
 **Domain:** Electric vehicle registrations (~22,000 raw records, ~4,986 unique vehicles)
 **Cloud:** Azure (Blob Storage + Event Grid) + Snowflake
@@ -84,7 +84,7 @@ An end-to-end Snowflake-native data engineering pipeline that ingests electric v
 | `BRONZE` | Raw ingestion, stage, stream, tasks | 7 |
 | `SILVER` | Cleansed + deduplicated data | 2 |
 | `GOLD` | Business-ready tables, Snowpark SP, Streamlit | 7 |
-| `ICEBERG` | Open-format copies on GCS | 3 |
+| `ICEBERG` | Open-format copies on Azure Blob Storage | 3 |
 | `DBT_GOLD` | dbt-managed transformation output | 3 |
 | `DATA_QUALITY` | Error quarantine, monitoring views | 12 |
 | `SHARING` | Governed external access | 3 |
@@ -100,7 +100,7 @@ An end-to-end Snowflake-native data engineering pipeline that ingests electric v
 2. Azure Event Grid sends notification (BLOB_CREATED event)
 3. Snowpipe monitors Event Grid subscription
 4. Snowpipe auto-triggers COPY INTO → RAW_EV_DATA (atomic transaction)
-5. STREAM (GCS_FILES_STREAM) detects new rows in Bronze table
+5. STREAM (AZURE_FILES_STREAM) detects new rows in Bronze table
 6. Root task (TSK_INGEST_EV_DATA) fires — checks WHEN SYSTEM$STREAM_HAS_DATA
 7. Chained task (TSK_ERROR_DETECTION) fires → Snowpark DQ SP
 8. Chained task (TSK_ERROR_NOTIFICATION) fires → email alert if errors found
@@ -117,7 +117,7 @@ An end-to-end Snowflake-native data engineering pipeline that ingests electric v
 
 | Stage | Latency | Mechanism |
 |-------|---------|-----------|
-| GCS → Bronze | ~30 seconds | Pub/Sub + Stream + Task (1-min check) |
+| Azure Blob → Bronze | ~30 seconds | Event Grid + Stream + Task (1-min check) |
 | Bronze → Silver | ~1 minute | Dynamic Table target_lag |
 | Silver → Gold | ~30 seconds | Stream-triggered task |
 | Gold → Iceberg | Manual sync | INSERT INTO (post-pipeline) |
@@ -133,8 +133,8 @@ An end-to-end Snowflake-native data engineering pipeline that ingests electric v
 
 | Object | Type | Description |
 |--------|------|-------------|
-| `GCP_EV_STAGE` | External Stage | Points to GCS bucket, directory enabled, auto-refresh via Pub/Sub |
-| `GCS_FILES_STREAM` | Stream (Stage) | Detects new file arrivals in the stage directory |
+| `AZURE_EV_STAGE` | External Stage | Points to Azure Blob container, directory enabled, auto-refresh via Event Grid |
+| `AZURE_FILES_STREAM` | Stream (Stage) | Detects new file arrivals in the stage directory |
 | `RAW_EV_DATA` | Table | Raw JSON stored as VARIANT with source file metadata |
 | `SP_INGEST_RAW_EV_DATA` | SP (Snowpark Python) | COPY INTO with ON_ERROR=ABORT_STATEMENT (atomic) |
 | `TSK_INGEST_EV_DATA` | Task (Root) | 1-min schedule, WHEN SYSTEM$STREAM_HAS_DATA guard |
@@ -145,7 +145,7 @@ An end-to-end Snowflake-native data engineering pipeline that ingests electric v
 ```
 RAW_EV_DATA
 ├── JSON_DATA          VARIANT     -- Full JSON payload
-├── SOURCE_FILE        VARCHAR     -- GCS file path
+├── SOURCE_FILE        VARCHAR     -- Azure Blob file path
 ├── SOURCE_FILE_ROW    NUMBER      -- Row number within file
 └── LOAD_TIMESTAMP     TIMESTAMP   -- Ingestion time (default CURRENT_TIMESTAMP)
 ```
@@ -447,7 +447,7 @@ Three engines are used deliberately to demonstrate when each is appropriate:
 ```
 TSK_INGEST_EV_DATA (root)
 ├── Schedule: 1 MINUTE
-├── Guard: WHEN SYSTEM$STREAM_HAS_DATA('GCS_FILES_STREAM')
+├── Guard: WHEN SYSTEM$STREAM_HAS_DATA('AZURE_FILES_STREAM')
 ├── Action: CALL SP_INGEST_RAW_EV_DATA()
 │
 ├──> TSK_ERROR_DETECTION (chained)
@@ -555,7 +555,7 @@ Any drift between layers triggers a `DRIFT_DETECTED` status.
 | Iceberg | Apache Iceberg | Open-format copies for external engine access |
 
 ### Benefits
-- **No vendor lock-in:** Data stored as Parquet files on GCS
+- **No vendor lock-in:** Data stored as Parquet files on Azure Blob Storage
 - **Multi-engine access:** Spark, Trino, Flink, Dremio via Iceberg REST catalog
 - **ACID transactions:** Consistent reads across engines
 - **Schema evolution:** Add/rename columns without rewriting data files
@@ -569,8 +569,8 @@ Any drift between layers triggers a `DRIFT_DETECTED` status.
 
 ### External Volume Configuration
 ```
-External Volume: GCP_ICEBERG_VOLUME
-Storage: GCS bucket
+External Volume: AZURE_ICEBERG_VOLUME
+Storage: Azure Blob container
 Allow Writes: TRUE
 Catalog: SNOWFLAKE (Snowflake-managed metadata)
 ```
@@ -658,7 +658,7 @@ Catalog: SNOWFLAKE (Snowflake-managed metadata)
 2. **Single XS warehouse:** Right-sized for current volume; scale up for production
 3. **Auto-suspend:** 300 seconds on COMPUTE_WH; 60 seconds on Postgres warehouses
 4. **Incremental DT:** Processes only changed rows, not full table scans
-5. **Iceberg on your storage:** You control GCS costs directly (no Snowflake storage markup)
+5. **Iceberg on your storage:** You control Azure Blob costs directly (no Snowflake storage markup)
 
 ### Production Scaling Plan
 
@@ -675,8 +675,8 @@ Catalog: SNOWFLAKE (Snowflake-managed metadata)
 
 ### Prerequisites
 - Snowflake account with ACCOUNTADMIN role
-- GCS bucket with Pub/Sub notification configured
-- GCP service account with storage access
+- Azure Blob container with Event Grid notification configured
+- Azure service principal with storage access
 
 ### Execution Order
 
@@ -697,7 +697,7 @@ Catalog: SNOWFLAKE (Snowflake-managed metadata)
 2. Insert manufacturer dimension data into `DIM_MANUFACTURERS_GOLD`
 3. Resume tasks (leaf-to-root order): notification → detection → ingestion → gold
 4. Resume Dynamic Table: `ALTER DYNAMIC TABLE ... RESUME`
-5. Upload source JSON file to GCS to trigger the pipeline
+5. Upload source JSON file to Azure Blob to trigger the pipeline
 
 ### dbt Deployment
 ```bash
@@ -1007,7 +1007,7 @@ Keep **Gold layer as native Snowflake tables**; export to **separate Iceberg sch
 2. **Open Format Portability**
    - Iceberg copies accessible to Spark, Trino, Flink
    - No Snowflake license required for consumers
-   - GCS-stored Parquet = cheap external storage
+  - Azure Blob-stored Parquet = cheap external storage
 
 3. **Governance Separation**
    - Gold = operational tables (internal RBAC)

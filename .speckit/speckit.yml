@@ -1,0 +1,62 @@
+name: Snowflake EV Data Pipeline
+version: 1.0.0
+
+# SpecKit Configuration
+speckit:
+  enabled: true
+  version: 1.0
+  
+# Specification Templates
+templates:
+  - name: Feature Specification
+    file: templates/feature-spec.md
+  - name: Data Pipeline Spec
+    file: templates/pipeline-spec.md
+  - name: Transformation Spec
+    file: templates/transformation-spec.md
+  - name: Bug Report
+    file: templates/bug-report.md
+
+# Workflow Configuration
+workflow:
+  stages:
+    - clarify
+    - specify
+    - plan
+    - implement
+    - review
+  
+# Quality Gates
+quality_gates:
+  spec_review: true
+  plan_review: true
+  implementation_review: true
+  test_coverage_minimum: 80
+
+# Project Principles (from constitution)
+principles:
+  - cost_optimization
+  - data_quality_first
+  - scalability_by_design
+  - compliance_and_auditability
+  - reproducibility_and_versioning
+  - observability_and_monitoring
+  - documentation_as_code
+
+# Required Fields for Specs
+spec_requirements:
+  feature_spec:
+    - title
+    - description
+    - acceptance_criteria
+    - cost_impact
+    - data_quality_considerations
+    - scalability_notes
+    
+  pipeline_spec:
+    - name
+    - source_systems
+    - target_systems
+    - sla
+    - cost_estimate
+    - data_lineage
