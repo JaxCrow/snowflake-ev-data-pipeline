@@ -3,10 +3,12 @@ ev_pipeline:
   outputs:
     dev:
       type: snowflake
-      account: dr77061
-      user: JAXDAMON
-      role: ACCOUNTADMIN
-      database: EV_PROJECT_DB
-      warehouse: COMPUTE_WH
-      schema: DBT_GOLD
+      account: "{{ env_var('DBT_SNOWFLAKE_ACCOUNT', 'jzfcdcp-vn23603') }}"
+      user: "{{ env_var('DBT_SNOWFLAKE_USER') }}"
+      role: "{{ env_var('DBT_SNOWFLAKE_ROLE', 'ACCOUNTADMIN') }}"
+      database: "{{ env_var('DBT_SNOWFLAKE_DATABASE', 'EV_PROJECT_DB') }}"
+      warehouse: "{{ env_var('DBT_SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH') }}"
+      schema: "{{ env_var('DBT_SNOWFLAKE_SCHEMA', 'DBT_GOLD') }}"
       threads: 4
+      password: "{{ env_var('DBT_SNOWFLAKE_PASSWORD', '') }}"
+      client_session_keep_alive: false

@@ -1,28 +1,23 @@
 -- ============================================================
 -- 04b_POSTGRESQL_CDC.sql
--- External Data Integration: PostgreSQL Connector, CDC sync,
+-- External Data Integration: External CDC transport + Snowflake merge,
 -- vehicle catalog replication, 12-hour refresh schedule
 -- ============================================================
 
 USE SCHEMA EV_PROJECT_DB.GOLD;
 
 -- ============================================================
--- Step 1: Database Connection (PostgreSQL)
+-- Step 1: External CDC Runtime Contract (PostgreSQL)
 -- ============================================================
--- Prerequisites (configure in Snowflake):
--- 1. Create a generic secret to store PostgreSQL credentials
---    CREATE SECRET PG_CRED TYPE = PASSWORD
---      USERNAME = 'snowflake_user'
---      PASSWORD = 'secure_password';
--- 2. Create database link or use API integration
---    (Snowflake PostgreSQL connector requires network policy configuration)
+-- Prerequisites:
+-- 1. External CDC engine (Airbyte OSS baseline) extracts from PostgreSQL
+-- 2. External CDC engine lands deltas into PG_VEHICLE_CATALOG_STAGING
+-- 3. This SQL applies SCD2 merge, history archival, and downstream enrichment
 
 -- ============================================================
--- Step 2: PostgreSQL External Table (Read-Only Connector)
+-- Step 2: CDC Landing Table in Snowflake
 -- ============================================================
--- Replicates PostgreSQL vehicle_catalog table via Snowflake Connector
--- This would be configured via Snowflake UI or API in production
--- For now, we demonstrate the table structure and CDC mechanism
+-- Receives deltas from external CDC transport runtime
 
 CREATE OR REPLACE TABLE PG_VEHICLE_CATALOG_STAGING (
     CATALOG_ID NUMBER(38,0),
@@ -99,7 +94,7 @@ def main(session):
         
         # Step 2: Prepare change records with CDC metadata
         df_changes_marked = df_changes.with_column(
-            "CDC_OPERATION", lit("INSERT")  # PostgreSQL connector tracks this; default INSERT
+            "CDC_OPERATION", lit("INSERT")  # Default fallback when operation is not explicitly provided in landing payload
         ).with_column(
             "CDC_SYNCED_AT", current_timestamp()
         )

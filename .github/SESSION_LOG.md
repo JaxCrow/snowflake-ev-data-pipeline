@@ -6,6 +6,35 @@
 
 ---
 
+## Update: 2026-07-23 (Runtime Stabilization)
+
+### What changed
+
+- Cortex Analyst + Streamlit runtime remained active, but semantic validation failed temporarily due to a missing county lookup object in live Snowflake.
+- The semantic model had already been updated to include county references (`county_name`, `county_code`, and `dim_county`).
+
+### Issue encountered
+
+- Analyst error:
+   - Semantic model validation failed because `EV_PROJECT_DB.GOLD.DIM_COUNTY_GOLD` was not found/authorized.
+
+### Remediation applied in Snowflake
+
+1. Confirmed object mismatch between repository SQL intent and live account objects.
+2. Created `EV_PROJECT_DB.GOLD.DIM_COUNTY_GOLD` in live schema.
+3. Ensured `FACT_EV_REGISTRATIONS` contains `COUNTY_NAME` in live table definition.
+4. Backfilled county names and rebuilt county lookup data from flattened Bronze source records.
+5. Re-uploaded semantic/runtime assets to `@EV_PROJECT_DB.GOLD.SEMANTIC_MODELS`.
+
+### Current verified runtime status
+
+- `EV_PROJECT_DB.GOLD.EV_MARKET_CHAT`: deployed and pointing to `@EV_PROJECT_DB.GOLD.SEMANTIC_MODELS`.
+- `EV_PROJECT_DB.GOLD.DIM_COUNTY_GOLD`: present and populated (`115` rows).
+- `EV_PROJECT_DB.GOLD.FACT_EV_REGISTRATIONS.COUNTY_NAME`: populated (`4986` rows with county name).
+- County lookup semantics now operational for prompts using county names/codes.
+
+---
+
 ## Work Completed
 
 ### 1. ✅ Project Constitution Created
@@ -88,6 +117,14 @@
 **Files Modified:**
 - `README.md` (architecture diagram updated)
 - `pipeline_documentation.md` (all cloud references updated)
+
+### 5. ✅ CDC Path Update (Trial-Compatible)
+
+**Date**: 2026-07-22
+
+- Official project path now uses external CDC transport (Airbyte OSS in Docker baseline) from NeonDB to Snowflake landing/reference.
+- Rationale: Snowflake trial accounts do not support External Access Integration runtime calls to external databases.
+- Existing historical notes about direct connector assumptions are superseded by the updated SpecKit continuity and feature-002 artifacts.
 - Overview sections (explicitly state Azure)
 
 **Cloud Platform Changes:**

@@ -30,6 +30,21 @@ Deploy a **production-ready end-to-end data pipeline** on Snowflake that ingests
 
 ---
 
+## Current Execution Status (2026-07-23)
+
+- Environment status: Dev deployment active in Snowflake.
+- Stage status: Stage 1 through Stage 10 objects are provisioned.
+- Analyst runtime status: `EV_PROJECT_DB.GOLD.EV_MARKET_CHAT` is deployed and running over `@EV_PROJECT_DB.GOLD.SEMANTIC_MODELS`.
+- Semantic model status: published with county semantics in fact + county lookup table reference (`DIM_COUNTY_GOLD`).
+- County lookup status: `EV_PROJECT_DB.GOLD.DIM_COUNTY_GOLD` exists and is populated.
+- Gold county-name status: `FACT_EV_REGISTRATIONS.COUNTY_NAME` is populated in current live data.
+- dbt validation status: project workflow last run reports `dbt debug/parse/run/test` successful.
+
+Operational note:
+- If Analyst validation errors appear for table visibility, re-check object existence and grants in `EV_PROJECT_DB.GOLD` before editing semantic YAML.
+
+---
+
 ## 2. Business Objectives
 
 ✅ **Objective 1**: Ingest EV registration data from Azure in real-time (~1-min latency)  
@@ -126,7 +141,7 @@ Deploy a **production-ready end-to-end data pipeline** on Snowflake that ingests
 - PostgreSQL schema created: `catalogue` (or custom name)
 - Tables: `vehicles` (vehicle_id, make, model, year, category, subcategory)
 - CDC (Change Data Capture) enabled on all tables
-- Neon DB connection string + credentials ready for Snowflake connector
+- Neon DB connection string + credentials ready for external CDC engine
 
 **Effort**: 20 minutes (create tables, enable CDC, verify connectivity)  
 **Success Criteria**: 
@@ -200,16 +215,16 @@ Deploy a **production-ready end-to-end data pipeline** on Snowflake that ingests
 ### Stage 4b: External Data Integration (04b_postgresql_cdc.sql) — NOW MANDATORY
 
 **Deliverables**:
-- PostgreSQL CDC Connector (connects to Neon DB)
-- Catalog dimension replication (12-hour sync schedule)
-- VEHICLES_DIM table in SILVER schema (CDC replicated)
+- External CDC engine pipeline (Airbyte OSS baseline in Docker) connects to Neon DB
+- Catalog replication to Snowflake reference landing (12-hour sync schedule)
+- Historical reference dimension in Snowflake with SCD2 semantics
 - Enrichment of Gold tables with catalog data (make, model, category)
 
-**Effort**: 20 minutes (execute SQL, configure connector)  
+**Effort**: 30-45 minutes (configure external CDC engine + execute SQL merge layer)  
 **Success Criteria**: 
-- [ ] Snowflake PostgreSQL connector created
+- [ ] External CDC engine connection from NeonDB to Snowflake landing is active
 - [ ] Initial CDC sync completes
-- [ ] VEHICLES_DIM populated from Neon DB
+- [ ] Reference catalog tables populated from Neon DB deltas
 - [ ] 12-hour sync task running
 
 ---
@@ -442,7 +457,7 @@ Deploy a **production-ready end-to-end data pipeline** on Snowflake that ingests
 **Day 2 (Transformations): ~4 hours**
 1. Execute Stage 3 (Silver): dynamic table, incremental refresh
 2. Execute Stage 4 (Gold): aggregations, fact tables
-3. **Execute Stage 4b** (PostgreSQL CDC): connector + dimension replication
+3. **Execute Stage 4b** (PostgreSQL CDC): external CDC transport + reference replication
 4. Execute Stage 5 (Data Quality): validations, monitoring, alerts
 5. Execute Stage 6 (Iceberg): open-format tables
 
@@ -453,8 +468,8 @@ Deploy a **production-ready end-to-end data pipeline** on Snowflake that ingests
 
 **Total Estimated Time**: 11-12eamlit): run tests, launch app
 
-**Optional (Stage 4b): ~1 hour**
-- PostgreSQL CDC setup (if source available)
+**Mandatory (Stage 4b): ~1 hour**
+- PostgreSQL CDC setup via external CDC engine (source required)
 
 **Total Estimated Time**: 10 hours (can be done in 1-2 days with parallel work)
 
@@ -507,7 +522,7 @@ Deploy a **production-ready end-to-end data pipeline** on Snowflake that ingests
 ## 11. Dependencies & Risks
 
 ##Neon DB CDC configuration complex | Medium | Medium | Provide step-by-step SQL scripts + docs |
-| Snowflake PostgreSQL connector authentication fails | Medium | Medium | Pre-validate Neon DB connection string |
+| External CDC engine connection/authentication fails | Medium | Medium | Pre-validate Neon DB connection string and destination credentials |
 | Azure setup learning curve | Medium | High | Provide step-by-step guided walkthrough |
 | Snowflake free trial expires mid-deployment | High | Medium | Use trial wisely; cost monitoring active |
 | Event Grid → Snowpipe latency > 30s | Low | Low | Fallback to scheduled task (5-min polling)
@@ -519,7 +534,7 @@ Deploy a **production-ready end-to-end data pipeline** on Snowflake that ingests
 | Azure setup learning curve | Medium | High | Provide step-by-step guided walkthrough |
 | Snowflake free trial expires mid-deployment | High | Medium | Use trial wisely; cost monitoring active |
 | Event Grid → Snowpipe latency > 30s | Low | Low | Fallback to scheduled task (5-min polling) |
-| PostgreSQL CDC unavailable | Low | Medium | Stage 4b optional; skip if no source |
+| PostgreSQL CDC runtime unavailable | Low | Medium | Keep retry/backfill runbook for external CDC engine |
 | dbt test failures | Medium | Medium | Provide test coverage targets (80%+) |
 | Streamlit deployment issues | Low | Low | Local dev option; Community Cloud backup |
 

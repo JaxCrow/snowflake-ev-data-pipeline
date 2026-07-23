@@ -15,6 +15,7 @@ CREATE OR REPLACE DYNAMIC TABLE CLEAN_EV_DATA_DT
 AS
   SELECT
     f.value[8]::VARCHAR   AS VIN,
+    f.value[9]::VARCHAR   AS COUNTY_NAME,
     f.value[14]::VARCHAR  AS MAKE,
     f.value[15]::VARCHAR  AS MODEL,
     f.value[13]::INT      AS MODEL_YEAR,

@@ -42,6 +42,22 @@
 
 ---
 
+## Phase 2.5: Go/No-Go Readiness Gate (Blocking)
+
+**Purpose**: Verify operational readiness controls before any additional stage execution.
+
+**CRITICAL**: User story stage execution does not begin until Go/No-Go gate passes.
+
+- [ ] T051 Validate Azure resources and event routing against gate criteria in `specs/001-rebuild-ev-pipeline/quickstart.md`
+- [ ] T052 Validate Snowflake authentication and required role privileges for Stage 1/2 in `specs/001-rebuild-ev-pipeline/quickstart.md`
+- [ ] T053 Validate secrets handling compliance (no repository-stored secrets) in `specs/001-rebuild-ev-pipeline/research.md`
+- [ ] T054 Validate CDC external connectivity prerequisites and record status in `specs/001-rebuild-ev-pipeline/quickstart.md`
+- [ ] T055 Record formal Go/No-Go decision with evidence in `specs/001-rebuild-ev-pipeline/quickstart.md`
+
+**Checkpoint**: Go/No-Go gate passed; stage execution may proceed within approved scope.
+
+---
+
 ## Phase 3: User Story 1 - Rebuild Full Dev Pipeline (Priority: P1) MVP
 
 **Goal**: Execute full Dev rebuild across all stages and prove curated metrics are produced end-to-end.
@@ -134,7 +150,8 @@
 
 - Phase 1 (Setup): starts immediately
 - Phase 2 (Foundational): depends on Phase 1 completion
-- Phase 3 (US1): depends on Phase 2 completion
+- Phase 2.5 (Go/No-Go): depends on Phase 2 completion
+- Phase 3 (US1): depends on Phase 2.5 completion (T055 pass)
 - Phase 4 (US2): depends on US1 through Gold stage completion (T020) and then executes Stage 4b
 - Phase 5 (US3): depends on US1 and US2 completion
 - Phase 6 (Polish): depends on all user stories complete

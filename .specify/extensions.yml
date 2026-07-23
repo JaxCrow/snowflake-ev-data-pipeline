@@ -1,0 +1,64 @@
+hooks:
+  before_specify:
+    - extension: "scope-clarity-gate"
+      command: "speckit.clarify"
+      description: "Validate scope and remove ambiguity before writing spec"
+      prompt: "Run clarify first and answer questions one-by-one before generating spec"
+      optional: false
+      enabled: true
+
+  after_specify:
+    - extension: "requirements-quality-checklist"
+      command: "speckit.checklist"
+      description: "Generate requirements-quality checklist for the new spec"
+      prompt: "Create a checklist focused on requirement quality, completeness, and ambiguity"
+      optional: false
+      enabled: true
+
+  before_plan:
+    - extension: "plan-readiness-clarification"
+      command: "speckit.clarify"
+      description: "Confirm no critical ambiguities remain before planning"
+      prompt: "Run clarify for plan readiness and confirm unresolved decisions"
+      optional: false
+      enabled: true
+
+  after_plan:
+    - extension: "design-quality-checklist"
+      command: "speckit.checklist"
+      description: "Create a checklist for design quality and contract completeness"
+      prompt: "Create checklist for architecture coherence, contracts, and testability"
+      optional: false
+      enabled: true
+
+  before_tasks:
+    - extension: "task-readiness-clarification"
+      command: "speckit.clarify"
+      description: "Validate final scope before decomposing into tasks"
+      prompt: "Confirm priorities, boundaries, and acceptance criteria before task generation"
+      optional: false
+      enabled: true
+
+  after_tasks:
+    - extension: "cross-artifact-consistency-analysis"
+      command: "speckit.analyze"
+      description: "Run non-destructive consistency analysis across spec, plan, and tasks"
+      prompt: "Detect gaps, ambiguity, missing coverage, and constitution conflicts"
+      optional: false
+      enabled: true
+
+  before_implement:
+    - extension: "implementation-readiness-analysis"
+      command: "speckit.analyze"
+      description: "Re-check consistency before implementation"
+      prompt: "Validate that tasks fully cover requirements and no critical conflicts remain"
+      optional: false
+      enabled: true
+
+  after_implement:
+    - extension: "post-implementation-convergence"
+      command: "speckit.converge"
+      description: "Run convergence pass for unresolved tasks and parity gaps"
+      prompt: "Identify incomplete tasks, residual risks, and parity issues"
+      optional: false
+      enabled: true

@@ -159,6 +159,32 @@ sources:
 
 ## Workflow Checklist
 
+## Interaction Protocol
+
+This project uses a strict guided-confirmation workflow for all SpecKit and implementation stages.
+
+### Mandatory collaboration behavior
+
+- After each meaningful stage or execution step, explain what was produced, changed, or validated before proposing the next step.
+- Ask confirmation questions one at a time.
+- Do not advance to the next major stage until the current stage outcome has been explained and user confirmation has been obtained.
+- Do not rely on a single generic confirmation such as "is this okay?". Questions must be specific to the result that was just produced.
+- Questions should verify correctness, scope alignment, tradeoff acceptance, or expected behavior, not only superficial satisfaction.
+- If a stage executes validations, summarize what each validation checked and why it matters before asking for confirmation.
+- If ambiguity remains, continue clarification one question at a time instead of batching multiple unresolved decisions together.
+
+### Mandatory stage checkpoints
+
+- `speckit.specify`: explain scope, constraints, assumptions, and closed decisions captured in the spec; then ask for focused confirmation.
+- `speckit.plan`: explain architecture, phases, artifacts, technical decisions, and validation flow; then ask for focused confirmation.
+- `speckit.tasks`: explain task grouping, dependencies, priority order, and testing/validation coverage; then ask for focused confirmation.
+- `speckit.implement`: explain what changed, how it was validated, what remains open, and any risks; then ask for focused confirmation.
+
+### Strictness policy
+
+- Treat this protocol as mandatory unless the user explicitly overrides it.
+- Prefer under-advancing over over-advancing: stop and confirm rather than assuming approval.
+
 ### For Specs
 - [ ] Use provided templates
 - [ ] Address all 7 principles

@@ -1,0 +1,93 @@
+name: ev_market_semantic_model
+description: Semantic model for EV vehicles and county reference data over Gold detailed registrations.
+
+tables:
+  - name: fact_ev_registrations
+    description: Curated EV registration facts.
+    base_table:
+      database: EV_PROJECT_DB
+      schema: GOLD
+      table: FACT_EV_REGISTRATIONS
+    dimensions:
+      - name: vin
+        expr: VIN
+        data_type: TEXT
+      - name: model_year
+        expr: MODEL_YEAR
+        data_type: NUMBER
+      - name: make
+        expr: MAKE
+        data_type: TEXT
+      - name: model
+        expr: MODEL
+        data_type: TEXT
+      - name: ev_type
+        expr: EV_TYPE
+        data_type: TEXT
+      - name: legislative_district
+        expr: LEGISLATIVE_DISTRICT
+        data_type: TEXT
+      - name: dol_vehicle_id
+        expr: DOL_VEHICLE_ID
+        data_type: TEXT
+      - name: vehicle_location
+        expr: VEHICLE_LOCATION
+        data_type: TEXT
+      - name: electric_utility
+        expr: ELECTRIC_UTILITY
+        data_type: TEXT
+      - name: county_name
+        expr: COUNTY_NAME
+        data_type: TEXT
+        description: Human-readable county name from the source data. Use this when the user asks for county names, counties by name, county-level rollups, or the county reference list.
+      - name: county_code
+        expr: COUNTIES
+        data_type: TEXT
+        description: County code or computed county identifier from the source data. Use this when the user asks for county codes, county identifiers, counties, or county-code filters.
+      - name: census_tract_2020
+        expr: CENSUS_TRACT_2020
+        data_type: TEXT
+      - name: source_file
+        expr: SOURCE_FILE
+        data_type: TEXT
+    time_dimensions:
+      - name: load_timestamp
+        expr: LOAD_TIMESTAMP
+        data_type: TIMESTAMP
+    measures:
+      - name: total_registrations
+        description: Total EV registrations.
+        expr: VIN
+        data_type: NUMBER
+        default_aggregation: count
+      - name: avg_electric_range
+        description: Average electric range in miles.
+        expr: ELECTRIC_RANGE
+        data_type: NUMBER
+        default_aggregation: avg
+      - name: max_base_msrp
+        description: Maximum base MSRP in result set.
+        expr: BASE_MSRP
+        data_type: NUMBER
+        default_aggregation: max
+
+  - name: dim_county
+    description: County reference dimension with the canonical county name and code.
+    base_table:
+      database: EV_PROJECT_DB
+      schema: GOLD
+      table: DIM_COUNTY_GOLD
+    dimensions:
+      - name: county_id
+        expr: COUNTY_ID
+        data_type: NUMBER
+        description: Surrogate county key.
+      - name: county_code
+        expr: COUNTY_CODE
+        data_type: TEXT
+        description: Canonical county code for code-based lookup and filtering.
+      - name: county_name
+        expr: COUNTY_NAME
+        data_type: TEXT
+        description: Canonical county name for display and natural-language county queries.
+

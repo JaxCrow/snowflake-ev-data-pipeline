@@ -52,7 +52,7 @@ Pre-Design Gate:
 - Reproducibility & Versioning: PASS (spec-driven staged rebuild, deterministic SQL path)
 - Observability & Monitoring: PASS (task history, DQ views, resource monitors)
 - Documentation as Code: PASS (spec + plan + design artifacts created)
-- Security & Governance: PASS (no credentials in files; connector setup documented)
+- Security & Governance: PASS (no credentials in files; external CDC runtime setup documented)
 - Portability & Open Formats: PASS (Iceberg stage included)
 
 Post-Design Gate:
@@ -114,10 +114,38 @@ Outputs: `data-model.md`, `contracts/data-interfaces.md`, `quickstart.md`
 ### Phase 2: Build Preparation (for /speckit.tasks)
 
 1. Decompose execution into stage-specific tasks (Stage 0 through Stage 10).
-2. Add dependencies and blockers (external access, credentials, account permissions).
+2. Add dependencies and blockers (external CDC runtime access, credentials, account permissions).
 3. Attach acceptance checks to each stage.
 4. Define final completion checklist aligned to SC-001..SC-006.
 
 ## Complexity Tracking
 
 No constitution violations requiring exception approval at planning time.
+
+## Execution Guardrails (Constitution-Enforced)
+
+- No stage execution proceeds without explicit user approval.
+- Clarifications and approvals are handled one question at a time.
+- Readiness gate verification is mandatory before any additional stage execution.
+- Current execution boundary is readiness closure plus Stage 2 maximum unless explicitly re-approved.
+
+## Go/No-Go Readiness Gate (Mandatory Before Stage Execution)
+
+All items below must be verified and documented before any additional stage execution:
+
+1. Azure resources and routing are operational (storage, queue, Event Grid path).
+2. Snowflake authentication works for current run and role access is sufficient for Stage 1/2.
+3. Integration trust and external volume access prerequisites are validated.
+4. Secrets handling policy is compliant (no secrets in repository files).
+5. CDC external connectivity prerequisites are available for later-stage execution.
+6. Evidence logging destination is prepared for stage acceptance results.
+
+Gate outcome rules:
+
+- If any gate item fails, no new stage execution is allowed.
+- If all gate items pass, execution is authorized only up to Stage 2 under current scope.
+
+## Decision Traceability
+
+- Current-run authentication, role, secrets policy, and scope decisions are recorded in `specs/001-rebuild-ev-pipeline/research.md`.
+- Readiness controls and pre-execution checks are recorded in `specs/001-rebuild-ev-pipeline/quickstart.md`.

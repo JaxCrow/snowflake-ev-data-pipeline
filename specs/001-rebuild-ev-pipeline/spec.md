@@ -103,3 +103,16 @@ As an analyst stakeholder, I need quality checks and conversational analytics to
 - External PostgreSQL catalogue access is available and permitted for synchronization.
 - A representative validation question set for analyst chat is defined before final sign-off.
 - Cost optimization remains a guiding constraint for cadence and resource usage decisions.
+
+## Operating Security & Access Constraints
+
+- Current-run Snowflake authentication method is interactive terminal password entry.
+- Target steady-state authentication method is key pair auth.
+- SSO externalbrowser remains deferred until IdP/SAML account-parameter issues are resolved.
+- Secrets are prohibited in repository files (SQL, YAML, markdown, or committed config).
+- Active scope for the current run is limited to readiness closure plus Stage 2 maximum unless explicitly re-approved.
+
+## Decision Traceability
+
+- Clarified authentication, role, secrets policy, and run scope are documented in `specs/001-rebuild-ev-pipeline/research.md`.
+- Pre-execution readiness controls are documented in `specs/001-rebuild-ev-pipeline/quickstart.md`.

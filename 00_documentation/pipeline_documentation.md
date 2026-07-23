@@ -28,6 +28,14 @@ An end-to-end Snowflake-native data engineering pipeline that ingests electric v
 **Database:** `EV_PROJECT_DB`
 **Warehouse:** COMPUTE_WH (XS) on Snowflake
 
+### Operational Status Snapshot (2026-07-23)
+
+- Stage deployment status: Stage 1 through Stage 10 provisioned in Dev.
+- Analyst path status: Streamlit + semantic model deployed and published to `@EV_PROJECT_DB.GOLD.SEMANTIC_MODELS`.
+- County lookup status: `EV_PROJECT_DB.GOLD.DIM_COUNTY_GOLD` exists and is populated for county code/name mapping.
+- Gold fact enrichment status: `EV_PROJECT_DB.GOLD.FACT_EV_REGISTRATIONS` includes populated `COUNTY_NAME` values in the current live environment.
+- dbt quality gate status: latest documented project run passed model build and data tests.
+
 ### Key Capabilities
 - Event-driven ingestion with zero idle compute cost
 - Sub-minute data freshness via Dynamic Tables
@@ -183,6 +191,7 @@ RAW_EV_DATA
 | `FACT_EV_REGISTRATIONS` | Table | Individual vehicle registrations (4,986 rows) |
 | `FACT_EV_MARKET_METRICS` | Table | Aggregated by MAKE x EV_TYPE (46 rows) |
 | `DIM_MANUFACTURERS_GOLD` | Table | Manufacturer dimension from PostgreSQL (35 rows) |
+| `DIM_COUNTY_GOLD` | Table | County lookup dimension (county code and county name) |
 | `SP_TRANSFORM_SILVER_TO_GOLD` | SP (Snowpark Python) | DataFrame aggregation |
 | `TASK_SILVER_TO_GOLD` | Task | Stream-triggered |
 | `SEMANTIC_MODELS` | Internal Stage | Hosts semantic model YAML + Streamlit files |
@@ -234,7 +243,7 @@ df_gold = df_silver.group_by("MAKE", "EV_TYPE").agg(
 
 ### Overview
 
-The pipeline integrates external reference data from a **PostgreSQL database** containing a vehicle manufacturer catalog. This dimension table is replicated to Snowflake's **GOLD schema via Change Data Capture (CDC)** with a **12-hour sync schedule** to minimize compute credits while maintaining data freshness.
+The pipeline integrates external reference data from a **PostgreSQL database** containing a vehicle manufacturer catalog. CDC extraction/transport is executed by an **external engine (Airbyte OSS in Docker baseline)** that lands changes in Snowflake, where SCD2 merge logic is applied with a **12-hour sync schedule** to minimize compute credits while maintaining data freshness.
 
 **Why PostgreSQL CDC?**
 - **Cost**: Free CDC (12-hour task) vs $50+/mo replication tools (Free-First principle ✅)
@@ -249,12 +258,14 @@ The pipeline integrates external reference data from a **PostgreSQL database** c
 ### Data Flow: PostgreSQL → Snowflake
 
 ```
-PostgreSQL Vehicle Catalog
+PostgreSQL Vehicle Catalog (NeonDB)
+  ↓
+External CDC Engine (Airbyte OSS)
         ↓
-   [12h Schedule]
+   [12h Sync Schedule]
         ↓
 PG_VEHICLE_CATALOG_STAGING
- (temporary, populated by CDC)
+ (temporary, populated by external CDC transport)
         ↓
    [MERGE + SCD Type 2]
         ↓
@@ -279,7 +290,7 @@ VW_EV_METRICS_ENRICHED
 | `PG_VEHICLE_CATALOG_STAGING` | Table | Temporary staging for CDC deltas | Every 12h (truncate after) |
 | `DIM_VEHICLE_CATALOG_GOLD` | Table | **Current** vehicle catalog with SCD metadata | Every 12h (merge) |
 | `DIM_VEHICLE_CATALOG_HISTORY` | Table | **Historical** versions for audit (SCD Type 2) | Append-only |
-| `SP_SYNC_PG_VEHICLE_CATALOG_CDC` | Snowpark Python SP | Executes CDC MERGE + SCD logic + archive | Called by task |
+| `SP_SYNC_PG_VEHICLE_CATALOG_CDC` | Snowpark Python SP | Applies SCD merge logic over externally landed CDC deltas + archive | Called by task |
 | `TSK_PG_CDC_SYNC` | Task | Scheduled every 12 hours (CRON: `0 */12 * * * UTC`) | Runs 2x daily |
 | `VW_EV_METRICS_ENRICHED` | View | LEFT JOIN facts with catalog for analytics | Real-time (materialized on query) |
 | `VW_CDC_SYNC_MONITOR` | View | CDC freshness dashboard | Real-time |
@@ -352,7 +363,7 @@ FROM DIM_VEHICLE_CATALOG_GOLD
 ```
 
 **Alert Rules:**
-- ⚠️ If `HOURS_SINCE_SYNC > 13`: Task failed; check `TASK_HISTORY` → investigate PostgreSQL connector
+- ⚠️ If `HOURS_SINCE_SYNC > 13`: Sync failed; check external CDC run logs and Snowflake task history
 - ⚠️ If `CURRENT_RECORDS = 0`: Merge accidentally cleared the dimension; rollback from HISTORY table
 - ✅ If `HOURS_SINCE_SYNC ∈ [0, 12]`: Healthy (within expected sync window)
 
@@ -849,18 +860,18 @@ STREAM triggers Task DAG (error detection → gold transform)
 
 ---
 
-### ADR-002: PostgreSQL Catalog Integration: CDC with 12-Hour Schedule
+### ADR-002: PostgreSQL Catalog Integration: External CDC Engine + 12-Hour Schedule
 
 **Status:** Accepted | **Date:** 2026-07-09
 
 #### Decision
-Replicate PostgreSQL vehicle catalog to Snowflake GOLD layer via **Change Data Capture (CDC) with 12-hour scheduled refresh**.
+Replicate PostgreSQL vehicle catalog to Snowflake via **external CDC engine transport (Airbyte OSS baseline) plus 12-hour scheduled SCD2 merge**.
 
 #### Alternatives Considered
 
 | Option | Approach | Cost/Month | Data Freshness | Operational Overhead |
 |--------|----------|-----------|-----------------|---------------------|
-| **A (Selected)** | CDC every 12h | $0 (via Task) | 12h max lag | Low (1 task) |
+| **A (Selected)** | External CDC engine + 12h merge | $0 tool license (OSS) + Snowflake compute | 12h max lag | Medium (1 external service + 1 task) |
 | **B** | Real-time replication | $100+ | <1 min | High (3 components) |
 | **C** | Manual bulk import | $0 | Stale (days) | Manual effort |
 | **D** | Event-driven (Debezium) | $50+ | <5 min | Medium (K8s cluster) |
@@ -868,10 +879,10 @@ Replicate PostgreSQL vehicle catalog to Snowflake GOLD layer via **Change Data C
 #### Rationale
 
 1. **Cost Optimization & Free-First**
-   - 12-hour schedule uses minimal Snowflake compute
-   - No external replication tool (would cost $50+/mo)
-   - Incremental CDC merge (not full import) saves storage
-   - **Win**: ~$50/month savings vs real-time Fivetran/Stitch
+  - Airbyte OSS avoids managed replication license costs
+  - 12-hour schedule uses minimal Snowflake compute
+  - Incremental CDC merge (not full import) saves storage
+  - **Win**: avoids $50+/month managed replication baseline
 
 2. **Data Quality**
    - SCD Type 2 (slowly changing dimensions) tracks all history
@@ -907,7 +918,7 @@ Replicate PostgreSQL vehicle catalog to Snowflake GOLD layer via **Change Data C
 
 ```
 PostgreSQL Vehicle Catalog
-  ↓ (CDC every 12h)
+  ↓ (external CDC engine run)
 PG_VEHICLE_CATALOG_STAGING (temporary)
   ↓ (MERGE + SCD Type 2)
 DIM_VEHICLE_CATALOG_GOLD (current records)
@@ -1120,12 +1131,12 @@ Use **PostgreSQL** (external) as vehicle catalog source.
 
 | Option | Database | Replication | Cost | Integration |
 |--------|----------|------------|------|-------------|
-| **A (Selected)** | PostgreSQL (on-prem/RDS) | CDC + 12h schedule | $0 (existing) | Native connector |
+| **A (Selected)** | PostgreSQL (NeonDB/on-prem/RDS) | External CDC engine + 12h schedule | $0 tool license (OSS) | Airbyte OSS + Snowflake landing |
 | **B** | Azure SQL Database | Replication | $50+/mo | Azure-native |
 | **C** | Cosmos DB | Change Feed | $100+/mo | Document model mismatch |
 
 #### Rationale
-- **Free-First**: Existing PostgreSQL; no tool licensing
+- **Free-First**: Existing PostgreSQL + Airbyte OSS; no managed-tool licensing
 - **Reproducibility**: RDBMS structure = predictable schema
 - **Auditability**: CDC trail in PostgreSQL logs
 
@@ -1136,8 +1147,8 @@ Use **PostgreSQL** (external) as vehicle catalog source.
 | Object | Type | Purpose | Azure-Specific |
 |--------|------|---------|-----------------|
 | `COMPUTE_WH` | Warehouse (XS) | Primary compute | |
-| `POSTGRESQL_COMPUTE_WH` | Warehouse (XS) | Postgres connector queries | |
-| `POSTGRESQL_OPS_WH` | Warehouse (XS) | Postgres connector operations | |
+| `CDC_MERGE_WH` | Warehouse (XS) | Reference SCD2 merge/validation workloads | |
+| `OPS_WH` | Warehouse (XS) | Operational checks and monitoring queries | |
 | `AZURE_EV_STORAGE_INT` | Storage Integration | Azure Blob Storage access | ✅ Azure |
 | `AZURE_EV_EVENTGRID_INT` | Notification Integration | Event Grid notifications | ✅ Azure |
 | `EV_DQ_EMAIL_INT` | Notification Integration | DQ email alerts | |

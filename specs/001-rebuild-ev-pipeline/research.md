@@ -49,3 +49,33 @@ Spec: specs/001-rebuild-ev-pipeline/spec.md
 - Rationale: Aligns with constitution free-first and cost optimization principles.
 - Alternatives considered:
   - Unconstrained execution: rejected as governance violation and budget risk.
+
+## Decision 7: Snowflake Authentication (Current Run)
+
+- Decision: Use interactive password entry in terminal for this run.
+- Rationale: SSO external browser is currently blocked by IdP/SAML account-parameter errors.
+- Alternatives considered:
+  - SSO externalbrowser: deferred until IdP/SAML integration is fixed.
+  - Key pair auth: selected as target steady-state method, not required to unblock today.
+
+## Decision 8: Execution Role (Current Run)
+
+- Decision: Use ACCOUNTADMIN temporarily for Dev readiness and early-stage execution.
+- Rationale: Reduces setup friction for first-pass validation and object creation.
+- Alternatives considered:
+  - Dedicated least-privilege role now: deferred to hardening phase after baseline validation.
+
+## Decision 9: Secrets Handling Policy
+
+- Decision: Secrets are entered interactively in terminal or supplied as local environment variables only.
+- Rationale: Aligns with constitution security rules and prevents credential leakage.
+- Non-negotiable constraints:
+  - No secrets in repository files (SQL, YAML, markdown, or config committed to git).
+
+## Decision 10: Scope for Today
+
+- Decision: Limit active execution scope to readiness closure plus Stage 2 maximum.
+- Rationale: Keep risk low while validating governance and ingestion baseline.
+- Scope boundary:
+  - Included: readiness evidence, Stage 1/2 validation.
+  - Excluded: Stage 3+ execution until explicit approval.

@@ -9,23 +9,21 @@ USE SCHEMA EV_PROJECT_DB.GOLD;
 -- Fact table — individual registrations
 CREATE OR REPLACE TABLE FACT_EV_REGISTRATIONS (
     VIN VARCHAR,
+    COUNTY_NAME VARCHAR,
     MAKE VARCHAR,
     MODEL VARCHAR,
     MODEL_YEAR NUMBER(38,0),
     EV_TYPE VARCHAR,
-    CAFV_ELIGIBILITY VARCHAR,
     ELECTRIC_RANGE NUMBER(38,0),
     BASE_MSRP FLOAT,
-    CITY VARCHAR,
-    COUNTY VARCHAR,
-    STATE VARCHAR,
-    ZIP_CODE VARCHAR,
     LEGISLATIVE_DISTRICT VARCHAR,
     DOL_VEHICLE_ID VARCHAR,
     VEHICLE_LOCATION VARCHAR,
     ELECTRIC_UTILITY VARCHAR,
     CENSUS_TRACT_2020 VARCHAR,
-    COUNTIES VARCHAR
+    COUNTIES VARCHAR,
+    SOURCE_FILE VARCHAR,
+    LOAD_TIMESTAMP TIMESTAMP_LTZ
 );
 
 -- Fact table — aggregated market metrics
@@ -45,6 +43,13 @@ CREATE OR REPLACE TABLE DIM_MANUFACTURERS_GOLD (
     COUNTRY VARCHAR
 );
 
+-- Dimension table for county lookup and friendly naming
+CREATE OR REPLACE TABLE DIM_COUNTY_GOLD (
+    COUNTY_ID NUMBER(38,0),
+    COUNTY_CODE VARCHAR,
+    COUNTY_NAME VARCHAR
+);
+
 -- Snowpark Python transformation SP
 CREATE OR REPLACE PROCEDURE SP_TRANSFORM_SILVER_TO_GOLD()
 RETURNS VARCHAR
@@ -56,10 +61,47 @@ EXECUTE AS CALLER
 AS
 $$
 def main(session):
-    from snowflake.snowpark.functions import col, count, avg, max as max_, current_timestamp
+    from snowflake.snowpark.functions import col, count, avg, max as max_, current_timestamp, row_number
+    from snowflake.snowpark.window import Window
     try:
         df_silver = session.table("EV_PROJECT_DB.SILVER.CLEAN_EV_DATA_DT")
-        df_gold = df_silver.group_by("MAKE", "EV_TYPE").agg(
+
+        # Gold detail fact: one row per registration (desagrupado)
+        df_detail = df_silver.select(
+            col("VIN"),
+            col("COUNTY_NAME"),
+            col("MAKE"),
+            col("MODEL"),
+            col("MODEL_YEAR"),
+            col("EV_TYPE"),
+            col("ELECTRIC_RANGE"),
+            col("BASE_MSRP"),
+            col("LEGISLATIVE_DISTRICT"),
+            col("DOL_VEHICLE_ID"),
+            col("VEHICLE_LOCATION"),
+            col("ELECTRIC_UTILITY"),
+            col("CENSUS_TRACT_2020"),
+            col("COUNTIES"),
+            col("SOURCE_FILE")
+        ).with_column("LOAD_TIMESTAMP", current_timestamp())
+
+        session.sql("TRUNCATE TABLE EV_PROJECT_DB.GOLD.FACT_EV_REGISTRATIONS").collect()
+        df_detail.write.mode("append").save_as_table("EV_PROJECT_DB.GOLD.FACT_EV_REGISTRATIONS")
+
+        session.sql("TRUNCATE TABLE EV_PROJECT_DB.GOLD.DIM_COUNTY_GOLD").collect()
+        county_lookup = df_detail.select(
+            col("COUNTIES").alias("COUNTY_CODE"),
+            col("COUNTY_NAME")
+        ).distinct()
+        county_lookup = county_lookup.select(
+            row_number().over(Window.order_by(col("COUNTY_NAME"), col("COUNTY_CODE"))).alias("COUNTY_ID"),
+            col("COUNTY_CODE"),
+            col("COUNTY_NAME")
+        ).sort(col("COUNTY_ID"))
+        county_lookup.write.mode("append").save_as_table("EV_PROJECT_DB.GOLD.DIM_COUNTY_GOLD")
+
+        # Gold aggregate fact: summary metrics for analytics
+        df_gold = df_detail.group_by("MAKE", "EV_TYPE").agg(
             count("VIN").alias("TOTAL_VEHICLES"),
             avg("ELECTRIC_RANGE").alias("AVG_RANGE"),
             max_("BASE_MSRP").alias("MAX_MSRP")
@@ -67,7 +109,11 @@ def main(session):
 
         session.sql("TRUNCATE TABLE EV_PROJECT_DB.GOLD.FACT_EV_MARKET_METRICS").collect()
         df_gold.write.mode("append").save_as_table("EV_PROJECT_DB.GOLD.FACT_EV_MARKET_METRICS")
-        return "SUCCESS"
+
+        detail_count = session.table("EV_PROJECT_DB.GOLD.FACT_EV_REGISTRATIONS").count()
+        metric_count = session.table("EV_PROJECT_DB.GOLD.FACT_EV_MARKET_METRICS").count()
+        county_count = session.table("EV_PROJECT_DB.GOLD.DIM_COUNTY_GOLD").count()
+        return f"SUCCESS: FACT_EV_REGISTRATIONS={detail_count}, FACT_EV_MARKET_METRICS={metric_count}, DIM_COUNTY_GOLD={county_count}"
     except Exception as e:
         return str(e)
 $$;
