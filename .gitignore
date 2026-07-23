@@ -1,0 +1,11 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local dbt/user artifacts
+10_dbt_project/.user.yml
+10_dbt_project/logs/
+10_dbt_project/target/
+
+# Streamlit app local cache
+09_analyst_streamlit/__pycache__/
